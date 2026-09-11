@@ -1,4 +1,4 @@
-"""API route tests against the TestClient with mock workers."""
+﻿"""API route tests against the TestClient with mock workers."""
 import json
 import time
 from pathlib import Path
@@ -87,7 +87,10 @@ def test_solve_plan_endpoint_flow(client):
     assert library["plans"]
 
 
-def test_clear_history_endpoint(client):
+def test_clear_history_endpoint(client, settings):
+    logs_dir = settings.logs_dir
+    logs_dir.mkdir(parents=True, exist_ok=True)
+    (logs_dir / "worker-yue2.log").write_text("boot\n", encoding="utf-8")
     response = client.post("/api/jobs", json={
         "kind": "plan", "name": "clear test",
         "params": {"style": "warm piano", "lyrics": "[Verse]\nLa"}})
@@ -97,10 +100,42 @@ def test_clear_history_endpoint(client):
     cleared = client.delete("/api/jobs")
     assert cleared.status_code == 200, cleared.text
     assert cleared.json()["cleared"] >= 1
+    assert cleared.json()["logs"]
     assert client.get("/api/jobs").json()["jobs"] == []
     again = client.delete("/api/jobs")
     assert again.status_code == 200
     assert again.json()["cleared"] == 0
+
+    # the Library is directory-based: entries survive clearing the jobs history
+    library = client.get("/api/library").json()
+    assert library["plans"], "plan files should still be listed after clearing jobs"
+    assert Path(library["plans"][0]["output_dir"]).parent.name == "plans"
+
+    # the job counter resets: the next job is #1 again
+    followup = client.post("/api/jobs", json={
+        "kind": "plan", "name": "after clear",
+        "params": {"style": "warm piano", "lyrics": "[Verse]\nLa"}})
+    assert followup.status_code == 200
+    assert followup.json()["job"]["id"] == 1
+    _poll(client, 1)
+
+
+def test_transcript_detail_has_abc(client):
+    audio = b"\x01" * 4096
+    upload = client.post("/api/uploads", files={"file": ("clip.wav", audio, "audio/wav")})
+    assert upload.status_code == 200
+    file_name = upload.json()["file"]
+    response = client.post("/api/jobs", json={
+        "kind": "transcribe", "name": "abc detail test",
+        "params": {"audio": file_name, "task": "full", "preset": "default"}})
+    assert response.status_code == 200, response.text
+    _poll(client, response.json()["job"]["id"])
+    library = client.get("/api/library").json()
+    assert library["transcripts"]
+    name = _name_of(library["transcripts"][0]["output_dir"])
+    detail = client.get(f"/api/library/transcripts/{name}").json()
+    assert detail["abc"], "score.abc must be surfaced for review"
+    assert "[Verse]" in detail["abc"] or detail["abc"].strip()
 
 
 def test_transcribe_flow(client):

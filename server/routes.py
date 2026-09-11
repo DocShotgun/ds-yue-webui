@@ -187,23 +187,10 @@ def create_router(settings: Settings) -> APIRouter:
 
     # -- library -------------------------------------------------------------
     @router.get("/library")
-    def get_library(request: Request):
-        jobs = queue(request).list(500)
-        songs, transcripts, plans = [], [], []
-        for job in jobs:
-            entry = {"job_id": job["id"], "name": job["name"], "kind": job["kind"],
-                     "status": job["status"], "output_dir": job["output_dir"],
-                     "created_at": job["created_at"], "finished_at": job["finished_at"],
-                     "error": job["error"]}
-            if job["kind"] in library.SONG_KINDS:
-                entry["audio"] = job["kind"] == "generate"  # decode results have audio.flac too
-                entry["audio_seconds"] = (job.get("result") or {}).get("audio_seconds")
-                songs.append(entry)
-            elif job["kind"] == "transcribe":
-                transcripts.append(entry)
-            else:
-                plans.append(entry)
-        return {"songs": songs, "transcripts": transcripts, "plans": plans}
+    def get_library():
+        return {"songs": library.list_directory_items(settings.outputs_dir, "song"),
+                "transcripts": library.list_directory_items(settings.transcripts_dir, "transcript"),
+                "plans": library.list_directory_items(settings.plans_dir, "plan")}
 
     @router.get("/library/songs/{name}")
     def get_song(name: str):

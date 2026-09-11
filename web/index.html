@@ -266,10 +266,10 @@
       <label>Lyrics
         <div class="tags">
           <template x-for="tag in structureTags" :key="tag">
-            <button class="tag" @click="cover.lyrics = (cover.lyrics ? cover.lyrics.trimEnd() + '\n' : '') + tag + '\n'" x-text="tag"></button>
+            <button class="tag" @click="insertTag(tag, 'cover')" x-text="tag"></button>
           </template>
         </div>
-        <textarea x-model="cover.lyrics" rows="8" placeholder="lyrics for the cover"></textarea>
+        <textarea id="cover-lyrics-text" x-model="cover.lyrics" rows="8" placeholder="lyrics for the cover"></textarea>
       </label>
       <div class="row">
         <button class="primary" @click="coverSubmit()">Generate cover</button>

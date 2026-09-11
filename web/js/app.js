@@ -222,11 +222,13 @@ document.addEventListener("alpine:init", () => {
     },
 
     async clearJobs() {
-      if (!confirm("Clear the entire jobs history? Files on disk are untouched; only the records are hidden.")) return;
+      if (!confirm("Clear the entire jobs history and worker logs? Files in the Library are untouched; job records are deleted and IDs restart at #1.")) return;
       try {
         const data = await api.del("/api/jobs");
         const noun = data.cleared === 1 ? "job" : "jobs";
-        this.notify(`Cleared ${data.cleared} ${noun} from the history`, "ok");
+        const logs = (data.logs || []).length;
+        this.notify(`Cleared ${data.cleared} ${noun} from the history` +
+                    (logs ? ` and ${logs} log${logs === 1 ? "" : "s"}` : ""), "ok");
         this.refreshJobsQuiet();
       } catch (error) {
         this.notify("Could not clear history: " + error.message, "err");
@@ -302,9 +304,10 @@ document.addEventListener("alpine:init", () => {
       await this.submit(form.name || null, planOnly ? "plan" : "generate", params);
     },
 
-    insertTag(tag) {
-      const area = document.getElementById("lyrics-text");
-      if (!area) { this.g.lyrics = (this.g.lyrics ? this.g.lyrics.trimEnd() + "\n" : "") + tag + "\n"; return; }
+    insertTag(tag, target) {
+      const model = target === "cover" ? this.cover : this.g;
+      const area = document.getElementById(target === "cover" ? "cover-lyrics-text" : "lyrics-text");
+      if (!area) { model.lyrics = (model.lyrics ? model.lyrics.trimEnd() + "\n" : "") + tag + "\n"; return; }
       const start = area.selectionStart ?? area.value.length;
       const end = area.selectionEnd ?? start;
       const lineStart = area.value.lastIndexOf("\n", start - 1) + 1;
@@ -313,7 +316,7 @@ document.addEventListener("alpine:init", () => {
       const isBlankLine = area.value.slice(lineStart, end).trim() === "";
       const text = isBlankLine && start === lineStart ? tag + "\n" : "\n" + tag + "\n";
       area.setRangeText(text, start, end, "end");
-      this.g.lyrics = area.value;
+      model.lyrics = area.value;
       const caret = start + text.length;
       area.focus();
       area.setSelectionRange(caret, caret);

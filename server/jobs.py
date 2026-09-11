@@ -85,24 +85,14 @@ class ResidentWorker:
         self.model_state = None
         boot = self._boot_path()
         boot.write_text(json.dumps(spec, indent=2), encoding="utf-8")
-        try:
-            log = open(self.log_path, "a", encoding="utf-8", buffering=1)
-        except OSError:
-            log = None
-        try:
-            self.proc = subprocess.Popen(
-                [str(self.python), str(self.script), "serve", "--spec", str(boot)],
-                stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                stderr=log if log is not None else subprocess.DEVNULL,
-                text=True, encoding="utf-8", bufsize=1,
-                cwd=str(self.settings.root))
-        except OSError:
-            if log is not None:
-                log.close()
-            raise
-        if log is not None:
-            log.write(f"\n===== boot {time.strftime('%Y-%m-%dT%H:%M:%S')} pid={self.proc.pid} =====\n")
-            threading.Thread(target=self._stderr_pump, args=(log,), daemon=True).start()
+        self.proc = subprocess.Popen(
+            [str(self.python), str(self.script), "serve", "--spec", str(boot)],
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True, encoding="utf-8", bufsize=1,
+            cwd=str(self.settings.root))
+        self._append_log(f"\n===== boot {time.strftime('%Y-%m-%dT%H:%M:%S')} pid={self.proc.pid} =====\n")
+        threading.Thread(target=self._stderr_pump, args=(self.proc,), daemon=True).start()
         threading.Thread(target=self._reader_loop, args=(self.proc, spec_hash), daemon=True).start()
 
     def ensure(self, spec: dict) -> None:
@@ -223,17 +213,23 @@ class ResidentWorker:
             proc.stdin.write(json.dumps(line, default=str) + "\n")
             proc.stdin.flush()
 
-    def _stderr_pump(self, log) -> None:
-        proc = self.proc
+    def _append_log(self, text: str) -> None:
+        """Append to the worker log with a short-lived handle, so the file is
+        only briefly locked and clearing the history can always delete it."""
+        try:
+            with open(self.log_path, "a", encoding="utf-8", buffering=1) as handle:
+                handle.write(text)
+        except OSError:
+            pass
+
+    def _stderr_pump(self, proc) -> None:
         if proc is None or proc.stderr is None:
             return
         try:
             for line in proc.stderr:
-                log.write(line if line.endswith("\n") else line + "\n")
+                self._append_log(line if line.endswith("\n") else line + "\n")
         except (OSError, ValueError):
             pass
-        finally:
-            log.close()
 
     def _reader_loop(self, proc, spec_hash) -> None:
         if proc is None or proc.stdout is None:
@@ -407,7 +403,11 @@ class JobQueue:
             self.db.commit()
 
     def clear(self) -> dict:
-        """Soft-delete the entire jobs history (rows stay in the DB, like cancel)."""
+        """Delete the jobs history and the worker logs; resetting the job counter.
+
+        Rows are removed outright (the Library is directory-based, so entries
+        there are unaffected) and sqlite_sequence is reset so the next job is #1.
+        """
         with self.db_lock:
             active = self.db.execute(
                 "SELECT id, status FROM jobs WHERE deleted=0 AND status IN ('pending','running')"
@@ -415,9 +415,25 @@ class JobQueue:
             if active is not None:
                 raise ValueError(f"cannot clear history while job #{active[0]} is {active[1]}; "
                                  "cancel it first")
-            cursor = self.db.execute("UPDATE jobs SET deleted=1 WHERE deleted=0")
+            cursor = self.db.execute("DELETE FROM jobs WHERE deleted=0")
+            self.db.execute("DELETE FROM sqlite_sequence WHERE name='jobs'")
             self.db.commit()
-            return {"cleared": cursor.rowcount}
+        logs = []
+        logs_dir = self.settings.logs_dir
+        if logs_dir.is_dir():
+            for log_file in sorted(logs_dir.glob("*.log")):
+                try:
+                    log_file.unlink()
+                    logs.append(log_file.name)
+                except OSError:
+                    # a pump write may hold the file briefly; retry once
+                    time.sleep(0.05)
+                    try:
+                        log_file.unlink()
+                        logs.append(log_file.name)
+                    except OSError:
+                        continue
+        return {"cleared": cursor.rowcount, "logs": logs}
 
     # -- submission ----------------------------------------------------------
     def submit(self, kind: str, params: dict, name: str | None = None) -> dict:

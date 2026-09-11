@@ -87,7 +87,7 @@ body {
   border: 1px solid var(--accent);
   border-radius: 12px;
 }
-.row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 14px; }
 .row.small { font-size: 0.85rem; color: var(--text-dim); margin-top: 6px; }
 .row.small button { padding: 3px 10px; font-size: 0.8rem; }
 .stage { color: var(--accent-2); }

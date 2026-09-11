@@ -116,8 +116,16 @@ def test_clear_history(queue, tmp_path):
     with pytest.raises(ValueError):
         queue.clear()
     wait_for_job(queue, job["id"])
+    logs_dir = queue.settings.logs_dir
+    logs_dir.mkdir(parents=True, exist_ok=True)
+    (logs_dir / "worker-yue2.log").write_text("boot\n", encoding="utf-8")
+    (logs_dir / "worker-sheetsage.log").write_text("boot\n", encoding="utf-8")
     cleared = queue.clear()
     assert cleared["cleared"] >= 1
+    assert sorted(cleared["logs"]) == ["worker-sheetsage.log", "worker-yue2.log"]
     assert queue.list() == []
     assert queue.counts() == {}
     queue.clear()  # idempotent on an empty history
+    assert not any(logs_dir.glob("*.log"))
+    followup = queue.submit("generate", {**params, "slug": "after-clear"}, "after clear")
+    assert followup["id"] == 1, "the job counter resets after clearing"

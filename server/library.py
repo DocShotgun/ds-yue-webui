@@ -7,7 +7,6 @@ import subprocess
 from pathlib import Path
 
 ID_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,179}")
-SONG_KINDS = ("generate", "decode")
 
 
 def _locate(candidates: list[Path], name: str) -> Path | None:
@@ -77,7 +76,7 @@ def read_transcript(settings, name: str) -> dict:
     directory = locate_transcript(settings, name)
     manifest = _read_json(directory / "transcription_manifest.json") or {}
     abc_check = _read_json(directory / "abc_check.json")
-    return {
+    summary = {
         "name": directory.name,
         "dir": str(directory),
         "status": manifest.get("status", "incomplete"),
@@ -87,6 +86,10 @@ def read_transcript(settings, name: str) -> dict:
         "abc": None,
         "has_audio_manifest": _read_json(directory / "input.json"),
     }
+    abc_path = directory / "score.abc"
+    if abc_path.is_file():
+        summary["abc"] = abc_path.read_text(encoding="utf-8", errors="replace")
+    return summary
 
 
 def read_plan(settings, name: str) -> dict:
@@ -145,6 +148,43 @@ def mp3_path(settings, name: str) -> Path:
     if result.returncode or not target.is_file():
         raise RuntimeError("mp3 conversion failed: " + result.stderr.decode(errors="replace")[-400:])
     return target
+
+
+def list_directory_items(directory: Path, kind: str) -> list[dict]:
+    """Scan a directory for library entries, independent of the jobs history.
+
+    New entries appear as soon as their files exist on disk, and they survive
+    clearing the jobs history. Entries are newest-first by directory mtime.
+    """
+    entries = []
+    if not directory.is_dir():
+        return entries
+    for child in directory.iterdir():
+        if not child.is_dir() or child.name.startswith("."):
+            continue
+        try:
+            entry = {"name": child.name, "output_dir": str(child),
+                     "created_at": child.stat().st_mtime}
+            if kind == "song":
+                result = _read_json(child / "result.json") or {}
+                entry["status"] = ("done" if result.get("status") == "complete"
+                                   else "failed" if result else "incomplete")
+                entry["audio_seconds"] = result.get("audio_seconds")
+                entry["has_audio"] = (child / "audio.flac").is_file()
+                entry["audio"] = entry["has_audio"]
+            elif kind == "transcript":
+                manifest = _read_json(child / "transcription_manifest.json") or {}
+                entry["status"] = "done" if manifest.get("status") == "complete" else "incomplete"
+            else:
+                plan = _read_json(child / "plan.json") or {}
+                entry["status"] = "complete" if (child / "plan_manifest.json").is_file() else "incomplete"
+                entry["timing"] = plan.get("timing")
+                entry["truncated"] = plan.get("truncated")
+            entries.append(entry)
+        except OSError:
+            continue
+    entries.sort(key=lambda item: item["created_at"], reverse=True)
+    return entries
 
 
 def delete_directory(settings, name: str, directories: list[Path], job_queue=None) -> None:
