@@ -300,7 +300,9 @@ def create_router(settings: Settings) -> APIRouter:
         deduped = target.is_file()
         if not deduped:
             settings.uploads_dir.mkdir(parents=True, exist_ok=True)
-            target.write_bytes(b"".join(chunks))
+            with target.open("wb") as handle:
+                for chunk in chunks:
+                    handle.write(chunk)
         chunks.clear()
         return {"file": target.name, "path": str(target), "bytes": total,
                 "deduped": deduped, "dir": str(target.parent)}

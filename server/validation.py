@@ -35,19 +35,6 @@ def unique_directory(base_dir, slug: str):
     return candidate
 
 
-def unique_file(base_dir, slug: str, suffix: str):
-    from datetime import datetime
-
-    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    stem = f"{slug}-{stamp}"
-    candidate = base_dir / f"{stem}{suffix}"
-    index = 1
-    while candidate.exists():
-        index += 1
-        candidate = base_dir / f"{stem}-{index}{suffix}"
-    return candidate
-
-
 def _clean_sampling(section: dict | None, label: str) -> dict | None:
     if section is None:
         return None

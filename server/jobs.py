@@ -397,11 +397,6 @@ class JobQueue:
             rows = self.db.execute("SELECT status, COUNT(*) FROM jobs WHERE deleted=0 GROUP BY status").fetchall()
         return {status: count for status, count in rows}
 
-    def mark_deleted(self, job_id: int) -> None:
-        with self.db_lock:
-            self.db.execute("UPDATE jobs SET deleted=1 WHERE id=?", (job_id,))
-            self.db.commit()
-
     def clear(self) -> dict:
         """Delete the jobs history, worker logs, and uploaded audio; reset the counter.
 
