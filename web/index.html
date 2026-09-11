@@ -542,7 +542,7 @@
         </div>
         <div class="error" x-show="detail.truncated && (detail.truncated.abc || detail.truncated.semantic)"
              x-text="'Generation truncated: ' + jsonString(detail.truncated)"></div>
-        <audio controls :src="audioUrl(detailName)" style="width: 100%" preload="metadata"></audio>
+        <audio controls :src="audioUrl(detailName)" style="width: 100%; margin-top: 10px; display: block" preload="metadata"></audio>
         <h3>Request</h3>
         <pre class="mono small" x-text="jsonString(detail.request)"></pre>
         <h3>Result</h3>
