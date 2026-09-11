@@ -259,6 +259,16 @@ class ResidentWorker:
                 self.model_state = event
                 self.last_activity = time.time()
             return
+        if event == "loading":
+            with self.state_lock:
+                self.model_state = "loading"
+            return
+        if event == "boot_failed":
+            # the worker is alive but unloaded; run commands reload it (the
+            # worker loads on its main thread), so it is like a "released" state
+            with self.state_lock:
+                self.model_state = "released"
+            return
         if event == "progress":
             job_id = payload.get("job_id")
             if isinstance(job_id, int):

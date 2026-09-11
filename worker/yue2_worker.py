@@ -11,6 +11,7 @@ Commands arrive over stdin/stdout using the protocol in protocol.py.
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import json
 import sys
 import time
@@ -21,16 +22,29 @@ from protocol import serve  # noqa: E402
 
 
 def load_pipeline(spec: dict):
+    # Windows: importing the transformers/scipy DLL stack from a thread other
+    # than the main one deadlocks on the loader lock (scipy.linalg.blas during
+    # module import). The runtime loads lazily on first use, so force the load
+    # here; load_pipeline runs on the main thread at boot (protocol.py makes
+    # sure the after-release reload runs on the main thread too).
+    import numpy  # noqa: F401
+    import soundfile  # noqa: F401
     from yue2 import YuE2Pipeline
 
     budget = float(spec.get("budget", 24.0))
-    return YuE2Pipeline.from_pretrained(
+    pipeline = YuE2Pipeline.from_pretrained(
         spec["model"], vae=spec.get("vae", "m-a-p/YuE2-Vae"),
         device=spec.get("device", "auto"), memory_budget_gib=budget,
         backend=spec.get("backend", "torch"), quantization=spec.get("quantization", "none"),
         offload_ar=bool(spec.get("offload_ar", False)), local_files_only=bool(spec.get("offline", False)),
         vae_core_frames=512 if budget <= 12 else 1024,
         progress=True)
+    # the torch AR model is genuinely unused only when backend=vllm AND vllm is
+    # importable; otherwise generate falls back to torch, and the warm-up load
+    # must not be left to the engine thread (Windows import deadlock)
+    if spec.get("backend", "torch") != "vllm" or importlib.util.find_spec("vllm") is None:
+        pipeline._load_model()
+    return pipeline
 
 
 def release_pipeline(pipe) -> None:

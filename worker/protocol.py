@@ -97,7 +97,9 @@ def serve(boot: dict, load_fn, run_fn, release_fn) -> int:
     cancelled)->result; release_fn(obj).
 
     The model loads eagerly at boot; the server sends its first job only after
-    the "ready" event. After "release" the next job triggers a reload.
+    the "ready" event. After "release" the next job triggers a reload. Loads
+    always run on the main thread: on Windows, importing the transformers/scipy
+    DLL stack from the engine thread deadlocks on the loader lock.
     """
     events = Events()
     cancel = threading.Event()
@@ -129,9 +131,9 @@ def serve(boot: dict, load_fn, run_fn, release_fn) -> int:
             state["busy"] = True
             try:
                 if obj is None:
-                    events.write("loading")
-                    obj = load_fn(boot)
-                    events.write("ready")
+                    events.write("job_failed", job_id=job_id,
+                                 error="worker not loaded", type="RuntimeError")
+                    continue
                 events.write("running", job_id=job_id)
                 result = run_fn(obj, command, events, lambda: cancel.is_set())
                 events.write("job_done", job_id=job_id, result=result)
@@ -172,6 +174,20 @@ def serve(boot: dict, load_fn, run_fn, release_fn) -> int:
                 events.write("error", message="run command requires an integer job_id")
                 continue
             with cv:
+                if obj is None:
+                    # Load on the main thread: importing the transformers/scipy
+                    # DLL stack from the engine thread deadlocks on Windows.
+                    events.write("loading")
+                    try:
+                        obj = load_fn(boot)
+                    except BaseException as exc:
+                        obj = None
+                        message = str(exc) or type(exc).__name__
+                        events.write("boot_failed", error=message, type=type(exc).__name__)
+                        # the server waits on this job's future; settle it cleanly
+                        events.write("job_failed", job_id=job_id, error=message, type=type(exc).__name__)
+                        continue
+                    events.write("ready")
                 queue.append((job_id, command))
                 cv.notify()
         elif cmd == "release":

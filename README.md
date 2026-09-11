@@ -1,6 +1,6 @@
 # ds-yue-webui
 
-A web UI for the [YuE2](https://huggingface.co/m-a-p) music model: song generation,
+A web UI for the [YuE2](https://huggingface.co/m-a-p/YuE2-3B) music model: song generation,
 cover generation, and editing.
 
 ## Features
@@ -28,10 +28,11 @@ cover generation, and editing.
 - **No other repository checkouts are required.** `abc_tools.py` is vendored inside
   this repo (`vendor/yue2/abc_tools.py` — see `vendor/NOTICE.md`), the YuE2 runtime
   installs from GitHub at install time, and SheetSage2 code+weights resolve from the
-  HF Hub. If you have local modifications: `--yue-dir` installs the runtime from a
-  local checkout, and `--yue-dir`/`--sheetsage-dir`/`--revision` give full control; the
-  vendored copy is refreshed from the local checkout when present (re-vendor it if
-  you update the checkout).
+  HF Hub. Local checkouts are strictly opt-in: `--yue-dir` installs the runtime from
+  a local checkout and writes `yue2.dir` into config.yaml (always used at runtime);
+  `--sheetsage-dir` does the same for the mel-frontend code source (`sheetsage2.dir`).
+  The vendored `abc_tools` copy is refreshed whenever `--yue-dir` is passed
+  (re-vendor it manually if you update the checkout without reinstalling).
 
 - **Job queue** (SQLite): `generate`, `plan`, `transcribe`, `decode` — one GPU job at
   a time across both worker families. Jobs survive server restarts (pending/running
@@ -95,15 +96,58 @@ the result on the Diagnostics page. If the relaxed shared env fails, re-run with
 | Flag | Meaning |
 |---|---|
 | `--strict-pins` | Two venvs exactly per the upstream READMEs: `.venv` (server + YuE2 with its pinned deps) and `.venv-sheetsage2` (torch 2.8 / transformers stack). Sets `worker.python_sheetsage2` in config.yaml. |
-| `--latest-torch` | Float torch beyond the upstream pin. torchaudio 2.11+ follows un-pinned and works with every future torch release. |
+| `--latest-torch` | Float torch beyond the upstream pin. torchaudio 2.11+ follows un-pinned and works with every future torch release. On Windows the cu130 PyTorch index is used (overridable with `--torch-index`). |
+| `--vendored-mel` | Apply the vendored mel-frontend patch (only needed when torchaudio cannot be installed for your torch build). Creates a local model at `data/sheetsage2-model/` (patched code + weights — code from the Hub, or from a local checkout with `--sheetsage-dir`) and points `sheetsage2.model` at it. |
+| `--smoke` | Run the smoke test after installation. |
+| `--data-dir`, `--venv-dir`, `--port`, `--revision`, `--skip-models` | Path/port overrides. |
+| `--yue-dir DIR` | **Opt-in** local YuE checkout: installs the runtime from it, refreshes the vendored `abc_tools` copy, and writes `yue2.dir` into config.yaml. |
+| `--sheetsage-dir DIR` | **Opt-in** local SheetSage2 checkout: mel-frontend code source for `--vendored-mel` and the `--strict-pins` requirements; writes `sheetsage2.dir` into config.yaml. |
+| `--torch-index URL` | **Windows:** override the PyTorch CUDA index (default `https://download.pytorch.org/whl/cu128`, or cu130 with `--latest-torch`). |
+| `--yue-source SRC` | YuE2 runtime source: `fa-fix` (DocShotgun/YuE @ flash-attention-fix) or `upstream`. Default: fa-fix on Windows (install.ps1), upstream elsewhere; a `--yue-rev` pin implies upstream. |
 
 By default (no flags) the installer installs torch at YuE2's exact pin and then
 **torchaudio pinned to the same version** — e.g. `torch==2.10.0` gets
 `torchaudio==2.10.0`. If that match is unavailable for your platform, the
 installer warns and points at `--vendored-mel` as the fallback.
-| `--vendored-mel` | Apply the vendored mel-frontend patch (only needed when torchaudio cannot be installed for your torch build). Creates a local model at `data/sheetsage2-model/` (patched code + weights — code from the Hub, or from a local checkout with `--sheetsage-dir`) and points `sheetsage2.model` at it. |
-| `--smoke` | Run the smoke test after installation. |
-| `--data-dir`, `--venv-dir`, `--port`, `--yue-dir`, `--sheetsage-dir`, `--revision`, `--skip-models` | Path/port overrides. |
+
+## Quick start (Windows)
+
+```bat
+git clone <this-repo> ds-yue-webui     :: the only repo you need
+cd ds-yue-webui
+
+:: 1. Install (uv venv, YuE2 runtime, webui deps, writes config.yaml)
+deploy\install.bat
+
+:: 2. Predownload model checkpoints (optional but recommended, multi-GB)
+deploy\download-models.bat
+
+:: 3. Start the server
+deploy\run.bat
+
+:: 4. Open the UI
+::    http://<server-ip>:8765/   (LAN or Tailscale)
+```
+
+Two Windows caveats are handled automatically:
+
+- **CUDA torch wheels.** PyPI's Windows torch wheels are CPU-only when no index
+  URL is given, so the installer preinstalls `torch==2.10.0` +
+  `torchaudio==2.10.0` from the PyTorch CUDA index
+  (`https://download.pytorch.org/whl/cu128` — the default CUDA for torch
+  2.10.0) *before* installing the YuE2 runtime, so its torch dependency
+  resolves against the CUDA wheel. Override the index with `--torch-index`, or
+  float to the latest torch with `--latest-torch` (cu130 index by default).
+- **Flash attention.** The Windows torch wheels are not compiled with flash
+  attention, and upstream YuE's internal availability check misfires on
+  Windows. The installer therefore installs the YuE2 runtime from the
+  `flash-attention-fix` branch of DocShotgun/YuE by default — a temporary
+  workaround; revisit upstream occasionally. Override with `--yue-source
+  upstream`, pin a different revision with `--yue-rev`, or use a local
+  checkout with `--yue-dir`.
+
+Note: `DELETE /api/jobs/{id}` cancels pending jobs instantly; a running job is
+killed without graceful cleanup on Windows.
 
 ## config.yaml reference
 
@@ -116,8 +160,8 @@ release_idle_minutes: 10
 offline: false                 # never reach the HF Hub (models must be cached)
 memory_budget_gib: 24.0        # YuE2 memory budget
 yue2:
-  # dir: ../YuE                # optional: local checkout override (vendored abc_tools
-  #                            #   is used otherwise; the runtime installs from GitHub)
+  # dir: ../YuE                # opt-in: local YuE checkout (no local checkout is
+  #                            #   used otherwise; install.sh writes this with --yue-dir)
   model: m-a-p/YuE2-3B
   vae: m-a-p/YuE2-Vae          # used for generation and decode=standard
   vae_legacy: m-a-p/YuE2-Vae-legacy
@@ -126,7 +170,8 @@ yue2:
   quantization: none           # none | fp8
   offload_ar: false
 sheetsage2:
-  # dir: ../SheetSage2         # optional: only the code source for --vendored-mel
+  # dir: ../SheetSage2         # opt-in: mel-frontend code source (written by
+  #                            #   --sheetsage-dir; used by --vendored-mel)
   model: auto                  # auto: local dir with weights, else m-a-p/SheetSage2
   device: cuda
   dtype: bf16

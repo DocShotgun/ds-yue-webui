@@ -40,20 +40,18 @@ def load_yaml_module():
 
 
 def find_sheetsage_dir(explicit: str | None) -> Path | None:
+    """Only an explicitly passed checkout is used; otherwise the Hub provides the code."""
     if explicit:
         path = Path(explicit).expanduser().resolve()
         if not (path / "modeling_mert2.py").is_file():
             raise SystemExit(f"{path} does not look like the SheetSage2 checkout (missing modeling_mert2.py)")
         return path
-    default = (ROOT / ".." / "SheetSage2").resolve()
-    if (default / "modeling_mert2.py").is_file():
-        return default
     return None
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--sheetsage-dir", default=None, help="SheetSage2 checkout (default: ../SheetSage2)")
+    parser.add_argument("--sheetsage-dir", default=None, help="SheetSage2 checkout (opt-in; the HF Hub is used otherwise)")
     parser.add_argument("--data-dir", default=None, help="project data dir (default: <root>/data)")
     parser.add_argument("--config", default=None, help="config.yaml path (default: <root>/config.yaml)")
     parser.add_argument("--revision", default=None, help="pin the Hub weight download to the source revision")

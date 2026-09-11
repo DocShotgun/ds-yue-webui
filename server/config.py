@@ -109,8 +109,13 @@ class Settings:
         config = self.config_path.parent
         self.data_dir = (config / self.data_dir if self.data_dir and not Path(self.data_dir).is_absolute()
                          else (self.data_dir or config / "data")).resolve()
-        self.yue2_dir = self._resolve_dir(self.yue2_dir or config / ".." / "YuE")
-        self.sheetsage2_dir = self._resolve_dir(self.sheetsage2_dir or config / ".." / "SheetSage2")
+        # Local checkouts are opt-in: set yue2.dir / sheetsage2.dir in config.yaml
+        # (install.sh writes them when --yue-dir / --sheetsage-dir are passed) or
+        # via the YUE_WEBUI_YUE2_DIR / YUE_WEBUI_SHEETSAGE_DIR environment. Without
+        # them the runtime installs from GitHub and abc_tools comes from the
+        # vendored copy in vendor/yue2/.
+        self.yue2_dir = self._resolve_dir(self.yue2_dir) if self.yue2_dir else None
+        self.sheetsage2_dir = self._resolve_dir(self.sheetsage2_dir) if self.sheetsage2_dir else None
         default_python = Path(sys.executable)
         self.worker_python = self._python(self.worker_python, default_python, "worker.python")
         self.worker_python_yue2 = self._python(self.worker_python_yue2, self.worker_python, "worker.python_yue2")
@@ -126,9 +131,10 @@ class Settings:
         if self.sheetsage2_model == "auto":
             # A local checkout is only usable as a model when it also carries weights;
             # otherwise fall back to the HF Hub repo (downloads on first use).
-            weights = any(self.sheetsage2_dir.glob("*.safetensors"))
+            weights = any(self.sheetsage2_dir.glob("*.safetensors")) if self.sheetsage2_dir else False
             self.sheetsage2_model = str(self.sheetsage2_dir) \
-                if (self.sheetsage2_dir / "config.json").is_file() and weights else "m-a-p/SheetSage2"
+                if self.sheetsage2_dir and (self.sheetsage2_dir / "config.json").is_file() \
+                and weights else "m-a-p/SheetSage2"
         if self.sheetsage2_dtype not in (None, "bf16", "fp32"):
             raise ConfigError(f"sheetsage2.dtype must be bf16 or fp32, got {self.sheetsage2_dtype}")
         self.sheetsage2_device = self.sheetsage2_device or "cuda"
@@ -234,6 +240,10 @@ class Settings:
 
     @property
     def abc_tools_path(self) -> Path:
+        if self.yue2_dir is None:
+            raise FileNotFoundError(
+                "no YuE checkout configured: set yue2.dir in config.yaml (or pass "
+                "--yue-dir) and run install.sh again to refresh the vendored abc_tools")
         return self.yue2_dir / "skills" / "yue2-music" / "scripts" / "abc_tools.py"
 
     @property
@@ -245,7 +255,9 @@ class Settings:
         vendor = self.vendored_abc_tools_path
         if vendor.is_file():
             return vendor
-        return self.abc_tools_path
+        if self.yue2_dir:
+            return self.abc_tools_path
+        return vendor
 
     def ensure_dirs(self) -> None:
         for path in (self.data_dir, self.specs_dir, self.logs_dir, self.outputs_dir, self.plans_dir,
@@ -260,10 +272,12 @@ class Settings:
             "release_idle_minutes": self.release_idle_minutes,
             "offline": self.offline,
             "memory_budget_gib": self.memory_budget_gib,
-            "yue2": {"dir": str(self.yue2_dir), "model": self.yue2_model, "vae": self.yue2_vae,
+            "yue2": {"dir": str(self.yue2_dir) if self.yue2_dir else None,
+                     "model": self.yue2_model, "vae": self.yue2_vae,
                      "vae_legacy": self.yue2_vae_legacy,
                      "abc_tools": str(self.resolved_abc_tools_path())},
-            "sheetsage2": {"dir": str(self.sheetsage2_dir), "model": self.sheetsage2_model,
+            "sheetsage2": {"dir": str(self.sheetsage2_dir) if self.sheetsage2_dir else None,
+                           "model": self.sheetsage2_model,
                            "device": self.sheetsage2_device, "dtype": self.sheetsage2_dtype},
             "worker": {"python": str(self.worker_python), "python_yue2": str(self.worker_python_yue2),
                        "python_sheetsage2": str(self.worker_python_sheetsage2)},

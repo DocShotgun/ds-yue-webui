@@ -94,8 +94,8 @@ def create_router(settings: Settings) -> APIRouter:
                              "transcribe_tasks": ("full", "melody-full", "melody-vocal"),
                              "residency": ("on-demand", "always"),
                              "vae_choices": ("standard", "legacy")}
-        example_path = settings.yue2_dir / "examples" / "song.json"
-        if example_path.is_file():
+        example_path = (settings.yue2_dir / "examples" / "song.json") if settings.yue2_dir else None
+        if example_path and example_path.is_file():
             try:
                 snapshot["example_request"] = json.loads(example_path.read_text(encoding="utf-8"))
             except ValueError:
