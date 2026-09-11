@@ -54,6 +54,19 @@ class Events:
         self.write("progress", job_id=job_id, **fields)
 
 
+def jsonable(value):
+    """Recursively convert Fractions/tuples (abc_tools reports) to JSON-safe values."""
+    from fractions import Fraction
+
+    if isinstance(value, Fraction):
+        return str(value)
+    if isinstance(value, (tuple, list)):
+        return [jsonable(item) for item in value]
+    if isinstance(value, dict):
+        return {key: jsonable(item) for key, item in value.items()}
+    return value
+
+
 def load_module(path: str | Path):
     """Import a Python file by path without any package installation."""
     path = Path(path)

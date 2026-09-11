@@ -36,6 +36,8 @@ cover generation, and editing.
 - **Job queue** (SQLite): `generate`, `plan`, `transcribe`, `decode` — one GPU job at
   a time across both worker families. Jobs survive server restarts (pending/running
   are marked failed at startup), progress via SSE (`GET /api/jobs/{id}/events`).
+  Pending jobs expose their 1-based queue position (`job.queue.position/total` —
+  the UI shows "queued · position 2 of 3").
 - **Resident workers** speak a small NDJSON protocol (`worker/protocol.py`). The model
   loads once at boot and stays alive across jobs. `residency` controls when the model
   is unloaded:

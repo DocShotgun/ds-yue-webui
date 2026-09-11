@@ -6,6 +6,8 @@ import sys
 import threading
 from pathlib import Path
 
+from worker.protocol import jsonable
+
 _LOCK = threading.Lock()
 _CACHE: dict[str, object] = {}
 
@@ -43,7 +45,7 @@ def inspect_abc(settings, text: str) -> dict:
     try:
         score = tools.parse_abc(text)
         report = tools.report(score)
-        return {"ok": True, "report": _jsonable(report),
+        return {"ok": True, "report": jsonable(report),
                 "has_chords": any(bool(report["voices"][name]["chords"]) for name in report["voices"])}
     except ValueError as exc:
         return {"ok": False, "error": str(exc), "has_chords": None}
@@ -65,24 +67,6 @@ def compare_abc(settings, before: str, after: str, *, allow_tempo_change: bool =
     names = tools.VOICES if voices == "both" else (voices,)
     try:
         result = tools.compare(tools.parse_abc(before), tools.parse_abc(after), names, allow_tempo_change)
-        return {"ok": True, "compare": _jsonable(result)}
+        return {"ok": True, "compare": jsonable(result)}
     except ValueError as exc:
         return {"ok": False, "error": str(exc)}
-
-
-def _jsonable(report: dict) -> dict:
-    """abc_tools reports contain Fractions and tuples; make them JSON-safe in one pass."""
-    from fractions import Fraction
-
-    def convert(value):
-        if isinstance(value, Fraction):
-            return str(value)
-        if isinstance(value, tuple):
-            return [convert(item) for item in value]
-        if isinstance(value, list):
-            return [convert(item) for item in value]
-        if isinstance(value, dict):
-            return {key: convert(item) for key, item in value.items()}
-        return value
-
-    return convert(report)

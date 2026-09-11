@@ -4,9 +4,22 @@ from __future__ import annotations
 import re
 import shutil
 import subprocess
+from datetime import datetime
 from pathlib import Path
 
 ID_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,179}")
+
+
+def unique_directory(base_dir: Path, slug: str) -> Path:
+    """Create a fresh timestamped output directory for a new library item."""
+    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    base = base_dir / f"{slug}-{stamp}"
+    candidate, index = base, 1
+    while candidate.exists():
+        index += 1
+        candidate = base_dir / f"{base.name}-{index}"
+    candidate.mkdir(parents=True)
+    return candidate
 
 
 def _locate(candidates: list[Path], name: str) -> Path | None:
@@ -125,7 +138,7 @@ def song_artifact(settings, name: str, relpath: str) -> Path:
         raise ValueError("invalid artifact path")
     candidate = directory.joinpath(*parts)
     resolved = candidate.resolve()
-    if not str(resolved).startswith(str(directory.resolve())):
+    if not resolved.is_relative_to(directory.resolve()):
         raise ValueError("invalid artifact path")
     if not candidate.is_file():
         raise FileNotFoundError(relpath)

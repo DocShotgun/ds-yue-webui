@@ -20,7 +20,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from protocol import serve, load_module, Events  # noqa: E402
+from protocol import jsonable, serve, load_module, Events  # noqa: E402
 
 _BOOT: dict = {}
 
@@ -86,23 +86,6 @@ def prompts_for_task(task: str) -> tuple[list[str], bool]:
     return prompts, True
 
 
-def _jsonable(report: dict):
-    from fractions import Fraction
-
-    def convert(value):
-        if isinstance(value, Fraction):
-            return str(value)
-        if isinstance(value, tuple):
-            return [convert(item) for item in value]
-        if isinstance(value, list):
-            return [convert(item) for item in value]
-        if isinstance(value, dict):
-            return {key: convert(item) for key, item in value.items()}
-        return value
-
-    return convert(report)
-
-
 def run_sheetsage(model, command: dict, events, cancelled) -> dict:
     job_id = command["job_id"]
     output_dir = Path(command["output_dir"])
@@ -128,7 +111,7 @@ def run_sheetsage(model, command: dict, events, cancelled) -> dict:
     if not (output_dir / "score.abc").is_file():
         raise ValueError("Transcriber did not save score.abc")
     (output_dir / "abc_check.json").write_text(json.dumps(
-        {"status": "passed", "score": _jsonable(tools.report(score)),
+        {"status": "passed", "score": jsonable(tools.report(score)),
          "scope": "symbolic format; transcription accuracy still needs review"}, indent=2) + "\n",
         encoding="utf-8")
     (output_dir / "transcription_manifest.json").write_text(json.dumps(

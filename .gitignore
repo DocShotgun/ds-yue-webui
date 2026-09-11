@@ -222,3 +222,4 @@ __marimo__/
 .venv-sheetsage2/
 data/
 specstate.json
+config.yaml

@@ -22,19 +22,6 @@ def slugify(name: str | None) -> str:
     return text[:120] if text else "song"
 
 
-def unique_directory(base_dir, slug: str):
-    from datetime import datetime
-
-    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    base = base_dir / f"{slug}-{stamp}"
-    candidate, index = base, 1
-    while candidate.exists():
-        index += 1
-        candidate = base_dir / f"{base.name}-{index}"
-    candidate.mkdir(parents=True)
-    return candidate
-
-
 def _clean_sampling(section: dict | None, label: str) -> dict | None:
     if section is None:
         return None
@@ -126,12 +113,14 @@ def _request_common(params: dict, *, allow_off: bool) -> tuple[dict, list[str]]:
             raise ValidationError("abc must be nonempty score text")
         if cot == "off":
             raise ValidationError("External ABC requires cot=melody/full, not off")
-    return {"style": style, "lyrics": lyrics, "cot": cot,
-            "seed": _check_seed(params.get("seed")),
-            "cfg_scale": _check_cfg(params.get("cfg_scale")),
-            "abc": abc,
-            "sampling": {"abc": _clean_sampling((params.get("sampling") or {}).get("abc") if isinstance(params.get("sampling"), dict) else None, "abc"),
-                         "semantic": _clean_sampling((params.get("sampling") or {}).get("semantic") if isinstance(params.get("sampling"), dict) else None, "semantic")}}, warnings
+    sampling = params.get("sampling") if isinstance(params.get("sampling"), dict) else {}
+    cleaned = {"style": style, "lyrics": lyrics, "cot": cot,
+               "seed": _check_seed(params.get("seed")),
+               "cfg_scale": _check_cfg(params.get("cfg_scale")),
+               "abc": abc,
+               "sampling": {"abc": _clean_sampling(sampling.get("abc"), "abc"),
+                            "semantic": _clean_sampling(sampling.get("semantic"), "semantic")}}
+    return cleaned, warnings
 
 
 def _check_abc_chords(settings: Settings, abc: str, warnings: list[str]) -> None:
@@ -151,18 +140,19 @@ def _check_abc_chords(settings: Settings, abc: str, warnings: list[str]) -> None
             "melody-mode input must not contain chord symbols; use cot=full to keep them or strip chords first")
 
 
-def validate_generate(settings: Settings, params: dict) -> tuple[dict, list[str]]:
-    cleaned, warnings = _request_common(params, allow_off=True)
+def _validate_model_request(settings: Settings | None, params: dict, *, allow_off: bool) -> tuple[dict, list[str]]:
+    cleaned, warnings = _request_common(params, allow_off=allow_off)
     if settings is not None and cleaned["abc"] is not None and cleaned["cot"] == "melody":
         _check_abc_chords(settings, cleaned["abc"], warnings)
     return cleaned, warnings
+
+
+def validate_generate(settings: Settings, params: dict) -> tuple[dict, list[str]]:
+    return _validate_model_request(settings, params, allow_off=True)
 
 
 def validate_plan(settings: Settings, params: dict) -> tuple[dict, list[str]]:
-    cleaned, warnings = _request_common(params, allow_off=False)
-    if settings is not None and cleaned["abc"] is not None and cleaned["cot"] == "melody":
-        _check_abc_chords(settings, cleaned["abc"], warnings)
-    return cleaned, warnings
+    return _validate_model_request(settings, params, allow_off=False)
 
 
 def validate_transcribe(params: dict) -> tuple[dict, list[str]]:

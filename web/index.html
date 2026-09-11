@@ -3,53 +3,76 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>ds-yue-webui</title>
+  <title>YuE2 Studio</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230f1115'/%3E%3Cpath d='M26 46V19l17-4v22' fill='none' stroke='%237aa7ff' stroke-width='4' stroke-linejoin='round'/%3E%3Ccircle cx='21' cy='46' r='6' fill='%234f8cff'/%3E%3Ccircle cx='38' cy='37' r='6' fill='%234f8cff'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="/css/app.css">
   <script defer src="/vendor/abcjs-basic-min.js"></script>
   <script src="/js/api.js"></script>
-  <script defer src="/js/app.js"></script>
+  <script defer src="/js/store.js"></script>
+  <script defer src="/js/tab-generate.js"></script>
+  <script defer src="/js/tab-cover.js"></script>
+  <script defer src="/js/tab-edit.js"></script>
+  <script defer src="/js/tab-library.js"></script>
+  <script defer src="/js/tab-diagnostics.js"></script>
   <script defer src="/vendor/alpine.min.js"></script>
 </head>
-<body x-data="app()" x-init="init()">
+<body x-data x-init="$store.ui.bootstrap()">
 
 <header class="topbar">
-  <div class="brand">ds-yue-webui <span class="sub">YuE2 song generation · covers · editing</span></div>
+  <div class="brand">YuE2 Studio <span class="sub">song generation · covers · editing</span></div>
   <nav class="tabs">
-    <button :class="{active: tab==='generate'}" @click="switchTab('generate')">Generate</button>
-    <button :class="{active: tab==='cover'}" @click="switchTab('cover')">Cover</button>
-    <button :class="{active: tab==='edit'}" @click="switchTab('edit')">Edit</button>
-    <button :class="{active: tab==='library'}" @click="switchTab('library')">Library</button>
-    <button :class="{active: tab==='diagnostics'}" @click="switchTab('diagnostics')">Diagnostics</button>
+    <button :class="{active: $store.ui.tab==='generate'}" @click="$store.ui.switchTab('generate')">Generate</button>
+    <button :class="{active: $store.ui.tab==='cover'}" @click="$store.ui.switchTab('cover')">Cover</button>
+    <button :class="{active: $store.ui.tab==='edit'}" @click="$store.ui.switchTab('edit')">Edit</button>
+    <button :class="{active: $store.ui.tab==='library'}" @click="$store.ui.switchTab('library')">Library</button>
+    <button :class="{active: $store.ui.tab==='diagnostics'}" @click="$store.ui.switchTab('diagnostics')">Diagnostics</button>
   </nav>
-  <div class="running-pill" x-show="runningCount() > 0" @click="refreshJobs()">
-    <span x-text="runningCount()"></span> running
+  <div class="running-pill" x-show="$store.ui.activeCount() > 0" x-cloak
+       @click="$store.ui.refreshJobs()" title="Active jobs — click to refresh">
+    <span x-text="$store.ui.activeCount()"></span> active
   </div>
 </header>
 
-<div class="toast" x-show="toast" x-transition :class="toast && toast.kind" x-cloak>
-  <span x-text="toast && toast.message"></span>
+<div class="toasts" x-cloak>
+  <template x-for="toast in $store.ui.toasts" :key="toast.id">
+    <div class="toast" :class="toast.kind">
+      <span class="toast-message" x-text="toast.message"></span>
+      <button class="btn-sm" x-show="toast.action" @click="$store.ui.runToastAction(toast)">View</button>
+      <button class="toast-close" @click="$store.ui.dismissToast(toast.id)" aria-label="Dismiss">&times;</button>
+    </div>
+  </template>
 </div>
 
-<div class="jobpanel" x-show="activeJobId" x-transition x-cloak>
-  <template x-if="jobDetail">
+<div class="jobpanel" x-show="$store.ui.activeJobId" x-transition x-cloak>
+  <template x-if="$store.ui.jobDetail">
     <div>
-      <div class="row">
-        <strong>Job #<span x-text="jobDetail.id"></span></strong>
-        <span class="badge" x-text="jobDetail.kind"></span>
-        <span class="pill" :class="jobDetail.status" x-text="jobDetail.status"></span>
-        <span class="stage" x-text="jobStageLabel()"></span>
+      <div class="jobpanel-head">
+        <strong>Job #<span x-text="$store.ui.jobDetail.id"></span></strong>
+        <span class="badge" x-text="$store.ui.jobDetail.kind"></span>
+        <span class="job-name" x-show="$store.ui.jobDetail.name" x-text="$store.ui.jobDetail.name"></span>
+        <span class="pill" :class="$store.ui.jobDetail.status" x-text="$store.ui.jobDetail.status"></span>
+        <span class="stage" x-text="$store.ui.jobStageLabel($store.ui.jobDetail)"></span>
+        <span class="spacer"></span>
+        <button class="danger btn-sm" x-show="$store.ui.jobActive($store.ui.jobDetail)"
+                @click="$store.ui.cancelJob($store.ui.activeJobId)">Cancel</button>
+        <button class="ghost btn-sm" @click="$store.ui.closeJobPanel()">Hide</button>
       </div>
-      <div class="progress"><div class="bar" :class="{pulse: jobActive()}" :style="'width:' + jobPercent() + '%'"></div></div>
+      <div class="progress">
+        <div class="bar"
+             :class="{
+               pulse: $store.ui.jobActive($store.ui.jobDetail) && $store.ui.jobPercent($store.ui.jobDetail) !== null,
+               indeterminate: $store.ui.jobActive($store.ui.jobDetail) && $store.ui.jobPercent($store.ui.jobDetail) === null,
+             }"
+             :style="$store.ui.jobPercent($store.ui.jobDetail) !== null ? 'width:' + $store.ui.jobPercent($store.ui.jobDetail) + '%' : ''"></div>
+      </div>
       <div class="row small">
-        <span x-text="'elapsed ' + fmtElapsed(jobDetail.started_at)"></span>
-        <span x-show="jobDetail.progress && jobDetail.progress.tokens"
-              x-text="'tokens: ' + jobDetail.progress.tokens"></span>
-        <span x-show="jobDetail.result && jobDetail.result.audio_seconds"
-              x-text="'audio: ' + fmtDuration(jobDetail.result && jobDetail.result.audio_seconds)"></span>
-        <button class="danger" x-show="jobActive()" @click="cancelWatchedJob()">Cancel</button>
-        <button class="ghost" @click="closeJobPanel()">Hide</button>
+        <span x-text="'elapsed ' + $store.ui.fmtElapsed($store.ui.jobDetail.started_at)"></span>
+        <span x-show="$store.ui.jobDetail.progress && $store.ui.jobDetail.progress.tokens"
+              x-text="$store.ui.jobDetail.progress ? 'tokens: ' + $store.ui.jobDetail.progress.tokens : ''"></span>
+        <span x-show="$store.ui.jobDetail.result && $store.ui.jobDetail.result.audio_seconds"
+              x-text="'audio: ' + $store.ui.fmtDuration($store.ui.jobDetail.result && $store.ui.jobDetail.result.audio_seconds)"></span>
       </div>
-      <div class="error" x-show="jobDetail.error" x-text="jobDetail.error"></div>
+      <div class="error" x-show="$store.ui.jobDetail.error" x-text="$store.ui.jobDetail.error"></div>
     </div>
   </template>
 </div>
@@ -57,13 +80,13 @@
 <main>
 
   <!-- ============================== GENERATE ============================== -->
-  <section x-show="tab==='generate'" x-cloak>
+  <section x-data="generateTab" x-show="$store.ui.tab==='generate'" x-cloak
+           @keydown.enter="onKeydown($event)">
     <div class="card">
       <div class="card-head">
         <h2>Song generation</h2>
-        <div>
-          <button class="ghost" @click="loadExample()">Load example</button>
-        </div>
+        <button class="ghost" x-show="$store.ui.config && $store.ui.config.example_request"
+                @click="loadExample()">Load example</button>
       </div>
       <div class="grid">
         <label>Name <input type="text" x-model="g.name" placeholder="optional, e.g. city_lights"></label>
@@ -93,27 +116,30 @@
         <div class="radios" x-show="g.cot !== 'off'">
           <label><input type="radio" value="plan" x-model="g.abcMode"> Let the model plan the score</label>
           <label><input type="radio" value="paste" x-model="g.abcMode"> Provide / edit an ABC score</label>
-          <label x-show="library.plans.length"><input type="radio" value="library" x-model="g.abcMode"> Use a saved plan</label>
+          <label x-show="$store.ui.library.plans.length"><input type="radio" value="library" x-model="g.abcMode"> Use a saved plan</label>
         </div>
         <div class="note" x-show="g.cot === 'off'">cot=off takes no ABC score.</div>
 
         <div x-show="g.abcMode === 'paste' && g.cot !== 'off'">
-          <div class="row small" x-show="library.plans.length">
+          <div class="row small" x-show="$store.ui.library.plans.length">
             <select x-model="g.abcPlanName">
               <option value="">— choose a saved plan —</option>
-              <template x-for="p in library.plans" :key="p.output_dir">
-                <option :value="nameOf(p.output_dir)" x-text="nameOf(p.output_dir)"></option>
+              <template x-for="p in $store.ui.library.plans" :key="p.output_dir">
+                <option :value="$store.ui.nameOf(p.output_dir)" x-text="$store.ui.nameOf(p.output_dir)"></option>
               </template>
             </select>
-            <button class="ghost" x-show="g.abcPlanName" @click="loadPlanInto(g.abcPlanName, 'generate')">Load</button>
+            <button class="ghost btn-sm" x-show="g.abcPlanName" @click="loadPlan()">Load</button>
           </div>
           <textarea class="mono" x-model="g.abcText" rows="10" placeholder="X:1&#10;T:&#10;M:4/4&#10;..."></textarea>
           <div class="row small">
-            <button @click="validateAbc(g.abcText)">Validate</button>
+            <button class="btn-sm" @click="$store.ui.validateAbc(g.abcText)">Validate</button>
           </div>
-          <details class="abc-details" @toggle="if ($el.open) rerenderAbc('gen-abc-preview', g.abcText)">
+          <details class="abc-details" @toggle="if ($el.open) rerenderAbc()">
             <summary>ABC preview</summary>
-            <div id="gen-abc-preview" class="abc-preview"></div>
+            <div class="sheet">
+              <div class="sheet-caption">Score preview</div>
+              <div id="gen-abc-preview" class="abc-preview"></div>
+            </div>
           </details>
         </div>
 
@@ -121,37 +147,26 @@
           <div class="row small">
             <select x-model="g.abcPlanName">
               <option value="">— choose a saved plan —</option>
-              <template x-for="p in library.plans" :key="p.output_dir">
-                <option :value="nameOf(p.output_dir)" x-text="nameOf(p.output_dir)"></option>
+              <template x-for="p in $store.ui.library.plans" :key="p.output_dir">
+                <option :value="$store.ui.nameOf(p.output_dir)" x-text="$store.ui.nameOf(p.output_dir)"></option>
               </template>
             </select>
-            <button x-show="g.abcPlanName" @click="loadPlanInto(g.abcPlanName, 'generate')">Load into editor</button>
+            <button class="btn-sm" x-show="g.abcPlanName" @click="loadPlan()">Load into editor</button>
           </div>
         </div>
 
         <details :open="g.advOpen">
           <summary>Advanced sampling</summary>
-          <template x-for="sectionName in samplingSections" :key="sectionName">
+          <template x-for="sectionName in ['abc', 'semantic']" :key="sectionName">
             <div class="sampling-group">
               <h4 x-text="sectionName === 'abc' ? 'ABC (plan) sampling' : 'Semantic sampling'"></h4>
-              <template x-if="sectionName === 'abc'">
-                <div class="grid three">
-                  <template x-for="field in samplingFields" :key="'abc' + field[0]">
-                    <label><span x-text="field[2]"></span>
-                      <input :type="field[1]" step="any" x-model="g.abcAdv[field[0]]" :placeholder="field[3]">
-                    </label>
-                  </template>
-                </div>
-              </template>
-              <template x-if="sectionName === 'semantic'">
-                <div class="grid three">
-                  <template x-for="field in samplingFields" :key="'sem' + field[0]">
-                    <label><span x-text="field[2]"></span>
-                      <input :type="field[1]" step="any" x-model="g.semAdv[field[0]]" :placeholder="field[3]">
-                    </label>
-                  </template>
-                </div>
-              </template>
+              <div class="grid three">
+                <template x-for="field in samplingFields" :key="sectionName + field[0]">
+                  <label><span x-text="field[2]"></span>
+                    <input :type="field[1]" step="any" x-model="g[sectionName === 'abc' ? 'abcAdv' : 'semAdv'][field[0]]" :placeholder="field[3]">
+                  </label>
+                </template>
+              </div>
             </div>
           </template>
           <div class="note">Leave blank for the model's checkpoint defaults. Seed and CFG scale are above this panel.</div>
@@ -163,42 +178,25 @@
         <label class="inline">CFG scale <input type="number" step="0.05" x-model.number="g.cfgScale" placeholder="1.0"></label>
       </div>
       <div class="row">
-        <button class="primary" @click="submitGenerate()">Generate song</button>
+        <button class="primary" @click="submitGenerate(false)">Generate song</button>
         <button class="ghost" @click="submitGenerate(true)">Plan only</button>
       </div>
-    </div>
-
-    <div class="card" x-show="jobs.length">
-      <div class="card-head"><h2>Recent jobs</h2><button class="ghost" @click="refreshJobs()">Refresh</button><button class="ghost" @click="clearJobs()">Clear history</button></div>
-      <table>
-        <thead><tr><th>#</th><th>Kind</th><th>Status</th><th>Created</th><th>Error</th></tr></thead>
-        <tbody>
-          <template x-for="job in jobs.slice(0, 10)" :key="job.id">
-            <tr @click="watch(job.id)" class="clickable">
-              <td x-text="job.id"></td>
-              <td x-text="job.kind"></td>
-              <td><span class="pill" :class="job.status" x-text="job.status"></span></td>
-              <td x-text="fmtDate(job.created_at)"></td>
-              <td class="error" x-text="job.status === 'failed' ? job.error : ''"></td>
-            </tr>
-          </template>
-        </tbody>
-      </table>
     </div>
   </section>
 
   <!-- ============================== COVER ============================== -->
-  <section x-show="tab==='cover'" x-cloak>
+  <section x-data="coverTab" x-show="$store.ui.tab==='cover'" x-cloak
+           @keydown.enter="onKeydown($event)">
     <div class="steps">
-      <div class="step" :class="{current: cover.step >= 1}">1 · Transcribe a recording</div>
-      <div class="step" :class="{current: cover.step >= 2}">2 · Review the melody</div>
-      <div class="step" :class="{current: cover.step >= 3}">3 · Style, lyrics &amp; generate</div>
+      <div class="step" :class="{current: cover.step === 1, done: cover.step > 1}">1 · Transcribe a recording</div>
+      <div class="step" :class="{current: cover.step === 2, done: cover.step > 2}">2 · Review the melody</div>
+      <div class="step" :class="{current: cover.step === 3}">3 · Style, lyrics &amp; generate</div>
     </div>
 
-    <div class="card" x-show="cover.step >= 1">
+    <div class="card">
       <div class="card-head"><h2>1 · Transcribe a recording (SheetSage2)</h2></div>
       <div class="note">SheetSage2 transcribes melody + chords (no lyrics — you provide those in step 3).
-        Editing regenerates a complete new recording; the source singer's voice is not preserved.</div>
+        A cover regenerates a complete new recording; the source singer's voice is not preserved.</div>
       <div class="grid">
         <label>Audio file <input type="file" accept="audio/*" @change="onCoverFile($event)"></label>
         <label>Transcription task
@@ -211,20 +209,24 @@
         <label>Max seconds (optional crop) <input type="number" step="1" x-model.number="cover.maxSeconds" placeholder="whole input"></label>
         <label>Name <input type="text" x-model="cover.name" placeholder="optional"></label>
       </div>
-      <div class="row"><button class="primary" @click="coverUpload()">Upload &amp; transcribe</button></div>
+      <div class="row">
+        <button class="primary" :disabled="transcribing" @click="upload()"
+                x-text="transcribing ? 'Transcribing…' : 'Upload & transcribe'"></button>
+      </div>
+      <div class="note busy" x-show="transcribing">Transcription queued — step 2 opens automatically when it finishes. The job panel shows progress.</div>
 
-      <div class="row small" x-show="cover.step >= 2">
-        Transcript:
-        <select x-model="cover.transcriptName" @change="coverLoadTranscript()">
+      <div class="row small" x-show="$store.ui.library.transcripts.length">
+        <span>or continue from an existing transcript:</span>
+        <select x-model="cover.transcriptName" @change="onSelectTranscript()">
           <option value="">— choose a transcription —</option>
-          <template x-for="t in library.transcripts" :key="t.output_dir">
-            <option :value="nameOf(t.output_dir)" x-text="nameOf(t.output_dir)"></option>
+          <template x-for="t in $store.ui.library.transcripts" :key="t.output_dir">
+            <option :value="$store.ui.nameOf(t.output_dir)" x-text="$store.ui.nameOf(t.output_dir)"></option>
           </template>
         </select>
       </div>
     </div>
 
-    <div class="card" x-show="cover.step >= 2">
+    <div class="card" x-show="cover.step >= 2 && cover.transcript" x-cloak>
       <div class="card-head"><h2>2 · Review the melody</h2></div>
       <template x-if="cover.transcript">
         <div>
@@ -232,28 +234,31 @@
             <span class="pill" :class="cover.transcript.status" x-text="cover.transcript.status"></span>
             <span x-text="(cover.transcript.warnings || []).length + ' transcriber warnings'"></span>
           </div>
-          <div class="note" x-show="(cover.transcript.warnings || []).length">
+          <div class="note warn-note" x-show="(cover.transcript.warnings || []).length">
             <template x-for="(warning, i) in cover.transcript.warnings" :key="i">
               <div x-text="warning"></div>
             </template>
           </div>
           <div class="note" x-show="cover.transcript.abc_check && cover.transcript.abc_check.scope"
-               x-text="cover.transcript.abc_check.scope"></div>
+               x-text="(cover.transcript.abc_check || {}).scope || ''"></div>
         </div>
       </template>
       <textarea class="mono" x-model="cover.abcText" rows="12"></textarea>
       <div class="row small">
-        <button @click="validateAbc(cover.abcText)">Validate</button>
-        <button class="ghost" x-show="cover.step >= 1" @click="cover.step = 1">Back</button>
+        <button class="btn-sm" @click="$store.ui.validateAbc(cover.abcText)">Validate</button>
+        <button class="ghost btn-sm" @click="cover.step = 1">Back</button>
       </div>
-      <details class="abc-details" @toggle="if ($el.open) rerenderAbc('cover-abc-preview', cover.abcText)">
+      <details class="abc-details" @toggle="if ($el.open) rerenderAbc()">
         <summary>ABC preview</summary>
-        <div id="cover-abc-preview" class="abc-preview"></div>
+        <div class="sheet">
+          <div class="sheet-caption">Score preview</div>
+          <div id="cover-abc-preview" class="abc-preview"></div>
+        </div>
       </details>
-      <div class="row"><button class="primary" @click="coverContinueToStyle()">Continue</button></div>
+      <div class="row"><button class="primary" @click="continueToStyle()">Continue</button></div>
     </div>
 
-    <div class="card" x-show="cover.step >= 3">
+    <div class="card" x-show="cover.step >= 3 && cover.transcript" x-cloak>
       <div class="card-head"><h2>3 · Style, lyrics &amp; generate</h2></div>
       <div class="radios">
         <label><input type="radio" :value="false" x-model="cover.keepChords">
@@ -274,46 +279,59 @@
         <label for="cover-lyrics-text">Lyrics</label>
         <div class="tags">
           <template x-for="tag in structureTags" :key="tag">
-            <button class="tag" @click="insertTag(tag, 'cover')" x-text="tag"></button>
+            <button class="tag" @click="insertTag(tag)" x-text="tag"></button>
           </template>
         </div>
         <textarea id="cover-lyrics-text" x-model="cover.lyrics" rows="8" placeholder="lyrics for the cover"></textarea>
       </div>
       <div class="row">
-        <button class="primary" @click="coverSubmit()">Generate cover</button>
+        <button class="primary" @click="submitCover()">Generate cover</button>
         <button class="ghost" @click="cover.step = 2">Back</button>
       </div>
     </div>
   </section>
 
   <!-- ============================== EDIT ============================== -->
-  <section x-show="tab==='edit'" x-cloak>
+  <section x-data="editTab" x-show="$store.ui.tab==='edit'" x-cloak
+           @keydown.enter="onKeydown($event)">
     <div class="card">
-      <div class="card-head"><h2>Edit a composition</h2></div>
+      <div class="card-head">
+        <h2>Edit a composition</h2>
+        <button class="ghost" @click="$store.ui.refreshLibrary()">Refresh</button>
+      </div>
       <div class="note">Editing the score and regenerating produces a complete new recording
         (the original waveform is not preserved outside your edits). The ABC file is the
         handoff currency: modify harmony, melody, tempo or form, then regenerate with cot=full.</div>
       <div class="row">
-        <select x-model="edit.songName" @change="editLoadSong()">
+        <select x-model="edit.songName" @change="onSelectSong()">
           <option value="">— choose a completed song —</option>
-          <template x-for="s in library.songs.filter(s => s.status === 'done')" :key="s.output_dir">
-            <option :value="nameOf(s.output_dir)" x-text="nameOf(s.output_dir)"></option>
+          <template x-for="s in doneSongs" :key="s.output_dir">
+            <option :value="$store.ui.nameOf(s.output_dir)" x-text="$store.ui.nameOf(s.output_dir)"></option>
           </template>
         </select>
-        <button class="ghost" @click="refreshEditSongs()">Refresh</button>
       </div>
+
+      <div class="empty" x-show="!doneSongs.length">
+        <svg width="42" height="42" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+        <div>No completed songs yet — generate one first.</div>
+        <button class="ghost btn-sm" @click="$store.ui.switchTab('generate')">Go to Generate →</button>
+      </div>
+
       <template x-if="edit.song">
         <div>
           <textarea class="mono" x-model="edit.abcText" rows="14"></textarea>
           <div class="row small">
-            <button @click="validateAbc(edit.abcText)">Validate</button>
-            <button @click="compareAbc(edit.abcOriginal, edit.abcText)">Compare with original</button>
+            <button class="btn-sm" @click="$store.ui.validateAbc(edit.abcText)">Validate</button>
+            <button class="btn-sm" @click="compare()">Compare with original</button>
             <label class="inline"><input type="checkbox" x-model="edit.allowTempoChange"> allow tempo change</label>
-            <button class="ghost" x-show="edit.abcText !== edit.abcOriginal" @click="edit.abcText = edit.abcOriginal">Revert</button>
+            <button class="ghost btn-sm" x-show="edit.abcText !== edit.abcOriginal" @click="revert()">Revert</button>
           </div>
-          <details class="abc-details" @toggle="if ($el.open) rerenderAbc('edit-abc-preview', edit.abcText)">
+          <details class="abc-details" @toggle="if ($el.open) rerenderAbc()">
             <summary>ABC preview</summary>
-            <div id="edit-abc-preview" class="abc-preview"></div>
+            <div class="sheet">
+              <div class="sheet-caption">Score preview</div>
+              <div id="edit-abc-preview" class="abc-preview"></div>
+            </div>
           </details>
           <template x-if="edit.compareResult">
             <div class="compare" :class="edit.compareResult.match ? 'ok' : 'changed'">
@@ -338,7 +356,7 @@
             </div>
             <label>Style <textarea x-model="edit.style" rows="2"></textarea></label>
             <label>Lyrics <textarea x-model="edit.lyrics" rows="8"></textarea></label>
-            <div class="row"><button class="primary" @click="editSubmit()">Regenerate song</button></div>
+            <div class="row"><button class="primary" @click="submitEdit()">Regenerate song</button></div>
           </div>
         </div>
       </template>
@@ -346,59 +364,75 @@
   </section>
 
   <!-- ============================== LIBRARY ============================== -->
-  <section x-show="tab==='library'" x-cloak>
+  <section x-data="libraryTab" x-show="$store.ui.tab==='library'" x-cloak>
     <div class="card">
       <div class="card-head">
         <h2>Songs</h2>
-        <div>
-          <select x-model="audioFormat">
+        <div class="inline-group">
+          <select x-model="$store.ui.audioFormat" title="Audio format for playback">
             <option value="flac">FLAC (lossless)</option>
             <option value="mp3">MP3 (browser-friendly)</option>
           </select>
-          <button class="ghost" @click="refreshLibrary()">Refresh</button>
+          <button class="ghost" @click="$store.ui.refreshLibrary()">Refresh</button>
         </div>
       </div>
-      <div class="note" x-show="!library.songs.length">No songs yet — generate one on the Generate tab.</div>
-      <table x-show="library.songs.length">
+      <div class="empty" x-show="!$store.ui.library.songs.length">
+        <svg width="42" height="42" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+        <div>No songs yet — generate one first.</div>
+        <button class="ghost btn-sm" @click="$store.ui.switchTab('generate')">Go to Generate →</button>
+      </div>
+      <table x-show="$store.ui.library.songs.length">
         <thead><tr><th>Name</th><th>Status</th><th>Length</th><th>Created</th><th></th></tr></thead>
         <tbody>
-          <template x-for="s in library.songs" :key="s.output_dir">
+          <template x-for="s in $store.ui.library.songs" :key="s.output_dir">
             <tr>
-              <td class="clickable" @click="openDetail('song', nameOf(s.output_dir))" x-text="nameOf(s.output_dir)"></td>
+              <td class="clickable" @click="$store.ui.openDetail('song', $store.ui.nameOf(s.output_dir))"
+                  x-text="$store.ui.nameOf(s.output_dir)"></td>
               <td><span class="pill" :class="s.status" x-text="s.status"></span></td>
-              <td x-text="fmtDuration(s.audio_seconds)"></td>
-              <td x-text="fmtDate(s.created_at)"></td>
-              <td class="row small">
-                <button x-show="s.status === 'done' && s.audio" @click="togglePlay(nameOf(s.output_dir))"
-                        x-text="playingName === nameOf(s.output_dir) ? 'Stop' : 'Play'"></button>
-                <button class="ghost" x-show="s.status === 'done'" @click="redecode(nameOf(s.output_dir), 'standard')">Re-decode</button>
-                <button class="ghost" x-show="s.status === 'done'" @click="redecode(nameOf(s.output_dir), 'legacy')">Legacy</button>
-                <button class="ghost" x-show="s.status === 'done'" @click="openDetail('song', nameOf(s.output_dir))">Edit</button>
-                <button class="danger" @click="deleteItem('song', nameOf(s.output_dir))">Delete</button>
+              <td x-text="$store.ui.fmtDuration(s.audio_seconds)"></td>
+              <td x-text="$store.ui.fmtDate(s.created_at)"></td>
+              <td class="actions">
+                <button class="btn-sm" x-show="s.status === 'done' && s.audio"
+                        @click="togglePlay($store.ui.nameOf(s.output_dir))"
+                        x-text="playingName === $store.ui.nameOf(s.output_dir) ? 'Stop' : 'Play'"></button>
+                <button class="ghost btn-sm" x-show="s.status === 'done'" title="Open in the Edit tab"
+                        @click="editSong($store.ui.nameOf(s.output_dir))">Edit</button>
+                <button class="ghost btn-sm" x-show="s.status === 'done'" title="Play, inspect request/result JSON and artifacts"
+                        @click="$store.ui.openDetail('song', $store.ui.nameOf(s.output_dir))">Details</button>
+                <button class="ghost btn-sm" x-show="s.status === 'done'" title="Re-decode cached latents with the standard VAE"
+                        @click="redecode($store.ui.nameOf(s.output_dir), 'standard')">Re-decode</button>
+                <button class="ghost btn-sm" x-show="s.status === 'done'" title="Re-decode with the legacy VAE"
+                        @click="redecode($store.ui.nameOf(s.output_dir), 'legacy')">Legacy</button>
+                <button class="danger btn-sm" @click="$store.ui.deleteItem('song', $store.ui.nameOf(s.output_dir))">Delete</button>
               </td>
             </tr>
           </template>
         </tbody>
       </table>
-      <template x-for="s in library.songs.filter(s => playingName === nameOf(s.output_dir))" :key="s.output_dir">
-        <audio :id="'audio-' + nameOf(s.output_dir)" :src="audioUrl(nameOf(s.output_dir))" preload="none"></audio>
+      <template x-for="s in $store.ui.library.songs.filter(s => playingName === $store.ui.nameOf(s.output_dir))" :key="s.output_dir">
+        <audio :id="'audio-' + $store.ui.nameOf(s.output_dir)" :src="$store.ui.audioUrl($store.ui.nameOf(s.output_dir))" preload="none"></audio>
       </template>
     </div>
 
     <div class="card">
       <div class="card-head"><h2>Transcripts</h2></div>
-      <div class="note" x-show="!library.transcripts.length">No transcriptions yet — create one on the Cover tab.</div>
-      <table x-show="library.transcripts.length">
+      <div class="empty" x-show="!$store.ui.library.transcripts.length">
+        <svg width="42" height="42" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v6m0 0l4-4m-4 4L8 4M4 13v5a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-5"/></svg>
+        <div>No transcriptions yet — create one on the Cover tab.</div>
+        <button class="ghost btn-sm" @click="$store.ui.switchTab('cover')">Go to Cover →</button>
+      </div>
+      <table x-show="$store.ui.library.transcripts.length">
         <thead><tr><th>Name</th><th>Status</th><th>Created</th><th></th></tr></thead>
         <tbody>
-          <template x-for="t in library.transcripts" :key="t.output_dir">
+          <template x-for="t in $store.ui.library.transcripts" :key="t.output_dir">
             <tr>
-              <td class="clickable" @click="openDetail('transcript', nameOf(t.output_dir))" x-text="nameOf(t.output_dir)"></td>
+              <td class="clickable" @click="$store.ui.openDetail('transcript', $store.ui.nameOf(t.output_dir))"
+                  x-text="$store.ui.nameOf(t.output_dir)"></td>
               <td><span class="pill" :class="t.status" x-text="t.status"></span></td>
-              <td x-text="fmtDate(t.created_at)"></td>
-              <td class="row small">
-                <button @click="openDetail('transcript', nameOf(t.output_dir))">Open</button>
-                <button class="danger" @click="deleteItem('transcript', nameOf(t.output_dir))">Delete</button>
+              <td x-text="$store.ui.fmtDate(t.created_at)"></td>
+              <td class="actions">
+                <button class="btn-sm" @click="$store.ui.openDetail('transcript', $store.ui.nameOf(t.output_dir))">Open</button>
+                <button class="danger btn-sm" @click="$store.ui.deleteItem('transcript', $store.ui.nameOf(t.output_dir))">Delete</button>
               </td>
             </tr>
           </template>
@@ -408,18 +442,22 @@
 
     <div class="card">
       <div class="card-head"><h2>Plans</h2></div>
-      <div class="note" x-show="!library.plans.length">No saved plans yet — use "Plan only" on the Generate tab.</div>
-      <table x-show="library.plans.length">
+      <div class="empty" x-show="!$store.ui.library.plans.length">
+        <svg width="42" height="42" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6s1.5-2 5-2 5 2 5 2v14s-1.5-1-5-1-5 1-5 1zM22 6s-1.5-2-5-2-5 2-5 2v14s1.5-1 5-1 5 1 5 1z"/></svg>
+        <div>No saved plans yet — use "Plan only" on the Generate tab.</div>
+      </div>
+      <table x-show="$store.ui.library.plans.length">
         <thead><tr><th>Name</th><th>Status</th><th>Created</th><th></th></tr></thead>
         <tbody>
-          <template x-for="p in library.plans" :key="p.output_dir">
+          <template x-for="p in $store.ui.library.plans" :key="p.output_dir">
             <tr>
-              <td class="clickable" @click="openDetail('plan', nameOf(p.output_dir))" x-text="nameOf(p.output_dir)"></td>
+              <td class="clickable" @click="$store.ui.openDetail('plan', $store.ui.nameOf(p.output_dir))"
+                  x-text="$store.ui.nameOf(p.output_dir)"></td>
               <td><span class="pill" :class="p.status" x-text="p.status"></span></td>
-              <td x-text="fmtDate(p.created_at)"></td>
-              <td class="row small">
-                <button @click="openDetail('plan', nameOf(p.output_dir))">Open</button>
-                <button class="danger" @click="deleteItem('plan', nameOf(p.output_dir))">Delete</button>
+              <td x-text="$store.ui.fmtDate(p.created_at)"></td>
+              <td class="actions">
+                <button class="btn-sm" @click="$store.ui.openDetail('plan', $store.ui.nameOf(p.output_dir))">Open</button>
+                <button class="danger btn-sm" @click="$store.ui.deleteItem('plan', $store.ui.nameOf(p.output_dir))">Delete</button>
               </td>
             </tr>
           </template>
@@ -429,12 +467,19 @@
   </section>
 
   <!-- ============================== DIAGNOSTICS ============================== -->
-  <section x-show="tab==='diagnostics'" x-cloak>
+  <section x-data="diagnosticsTab" x-show="$store.ui.tab==='diagnostics'" x-cloak>
     <div class="card">
       <div class="card-head">
         <h2>Diagnostics</h2>
-        <button class="primary" :disabled="diagLoading" @click="runDiagnostics()" x-text="diagLoading ? 'Checking…' : 'Run check'"></button>
+        <button class="primary" :disabled="diagLoading" @click="run()"
+                x-text="diagLoading ? 'Checking…' : 'Run check'"></button>
       </div>
+
+      <div class="empty" x-show="!diag && !diagLoading">
+        <svg width="42" height="42" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+        <div>Run a check to see the environment, GPU, queue and worker states.</div>
+      </div>
+
       <template x-if="diag">
         <div>
           <div class="error" x-show="diag.warnings.length">
@@ -443,152 +488,203 @@
             </template>
           </div>
 
-          <h3>Environment</h3>
-          <div class="row small">
-            <span class="pill" :class="diag.doctor && diag.doctor.dependencies_ready ? 'done' : 'failed'"
-                  x-text="diag.doctor && diag.doctor.dependencies_ready ? 'dependencies ready' : (diag.doctor && diag.doctor.unavailable ? 'doctor unavailable' : 'dependencies incomplete')"></span>
-            <span x-show="diag.doctor && diag.doctor.unavailable" x-text="diag.doctor && diag.doctor.unavailable"></span>
+          <div class="subcard">
+            <h3>Environment</h3>
+            <div class="row small">
+              <span class="pill" :class="doctorOk() ? 'done' : 'failed'" x-text="doctorLabel()"></span>
+            </div>
+            <table x-show="diag.doctor && diag.doctor.versions">
+              <thead><tr><th>Package</th><th>Version</th></tr></thead>
+              <tbody>
+                <template x-for="(version, name) in diag.doctor.versions" :key="name">
+                  <tr><td x-text="name"></td><td x-text="version || 'missing'"></td></tr>
+                </template>
+              </tbody>
+            </table>
           </div>
-          <table x-show="diag.doctor && diag.doctor.versions">
-            <thead><tr><th>Package</th><th>Version</th></tr></thead>
-            <tbody>
-              <template x-for="(version, name) in diag.doctor.versions" :key="name">
-                <tr><td x-text="name"></td><td x-text="version || 'missing'"></td></tr>
-              </template>
-            </tbody>
-          </table>
 
-          <h3>GPU</h3>
-          <div class="note" x-show="!diag.gpus.length">nvidia-smi unavailable or no GPU.</div>
-          <table x-show="diag.gpus.length">
-            <thead><tr><th>GPU</th><th>Memory</th><th>Utilization</th></tr></thead>
-            <tbody>
-              <template x-for="(gpu, i) in diag.gpus" :key="i">
-                <tr>
-                  <td x-text="gpu.name"></td>
-                  <td x-text="gpu.memory_used_mib + ' / ' + gpu.memory_total_mib + ' MiB'"></td>
-                  <td x-text="gpu.utilization_percent + '%'"></td>
-                </tr>
-              </template>
-            </tbody>
-          </table>
+          <div class="subcard">
+            <h3>GPU</h3>
+            <div class="note" x-show="!diag.gpus.length">nvidia-smi unavailable or no GPU.</div>
+            <table x-show="diag.gpus.length">
+              <thead><tr><th>GPU</th><th>Memory</th><th>Utilization</th></tr></thead>
+              <tbody>
+                <template x-for="(gpu, i) in diag.gpus" :key="i">
+                  <tr>
+                    <td x-text="gpu.name"></td>
+                    <td x-text="gpu.memory_used_mib + ' / ' + gpu.memory_total_mib + ' MiB'"></td>
+                    <td x-text="gpu.utilization_percent + '%'"></td>
+                  </tr>
+                </template>
+              </tbody>
+            </table>
+          </div>
 
-          <h3>Queue &amp; workers</h3>
-          <div class="row small">
-            <template x-for="(count, status) in diag.queue.counts" :key="status">
-              <span class="badge" x-text="status + ': ' + count"></span>
+          <div class="subcard">
+            <h3>Queue &amp; workers</h3>
+            <div class="row small">
+              <template x-for="(count, status) in diag.queue.counts" :key="status">
+                <span class="badge" x-text="status + ': ' + count"></span>
+              </template>
+            </div>
+            <table>
+              <thead><tr><th>Worker</th><th>State</th><th>PID</th><th>Idle</th></tr></thead>
+              <tbody>
+                <template x-for="worker in diag.queue.workers" :key="worker.kind">
+                  <tr>
+                    <td x-text="worker.kind"></td>
+                    <td><span class="pill" :class="worker.model_state || 'idle'" x-text="worker.model_state || 'not loaded'"></span></td>
+                    <td x-text="worker.pid || '—'"></td>
+                    <td x-text="worker.idle_seconds !== null && worker.idle_seconds !== undefined ? $store.ui.fmtDuration(worker.idle_seconds) : '—'"></td>
+                  </tr>
+                </template>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="subcard">
+            <h3>Smoke test</h3>
+            <div class="note" x-show="!diag.smoke">Not run. Opt in during install with <code>install.sh --smoke</code>; the report appears here.</div>
+            <template x-if="diag.smoke">
+              <div>
+                <div class="row small">
+                  <span class="pill" :class="diag.smoke.passed ? 'done' : 'failed'"
+                        x-text="diag.smoke.passed ? 'passed' : 'failed'"></span>
+                </div>
+                <div class="note" x-show="!diag.smoke.passed">If the relaxed shared env failed, re-run <code>install.sh --strict-pins</code> and point worker.python_sheetsage2 back at the patched model as documented.</div>
+                <pre class="mono small" x-text="$store.ui.jsonString(diag.smoke)"></pre>
+              </div>
             </template>
           </div>
-          <table>
-            <thead><tr><th>Worker</th><th>State</th><th>PID</th><th>Idle</th></tr></thead>
-            <tbody>
-              <template x-for="worker in diag.queue.workers" :key="worker.kind">
-                <tr>
-                  <td x-text="worker.kind"></td>
-                  <td><span class="pill" :class="worker.model_state || 'idle'" x-text="worker.model_state || 'not loaded'"></span></td>
-                  <td x-text="worker.pid || '—'"></td>
-                  <td x-text="worker.idle_seconds !== null && worker.idle_seconds !== undefined ? fmtDuration(worker.idle_seconds) : '—'"></td>
-                </tr>
-              </template>
-            </tbody>
-          </table>
 
-          <h3>Smoke test</h3>
-          <div class="note" x-show="!diag.smoke">Not run. Opt in during install with <code>install.sh --smoke</code>; the report appears here.</div>
-          <template x-if="diag.smoke">
-            <div>
-              <div class="row small">
-                <span class="pill" :class="diag.smoke.passed ? 'done' : 'failed'" x-text="diag.smoke.passed ? 'passed' : 'failed'"></span>
-              </div>
-              <div class="note" x-show="!diag.smoke.passed">If the relaxed shared env failed, re-run <code>install.sh --strict-pins</code> and point worker.python_sheetsage2 back at the patched model as documented.</div>
-              <pre class="mono small" x-text="jsonString(diag.smoke)"></pre>
+          <div class="subcard">
+            <h3>Tools &amp; disk</h3>
+            <div class="row small">
+              <span class="badge" x-text="'ffmpeg: ' + (diag.tools.ffmpeg || 'missing')"></span>
+              <span class="badge" x-text="'uv: ' + (diag.tools.uv || 'missing')"></span>
+              <span class="badge" x-text="'disk free: ' + Math.round(diag.disk.free_gib) + ' GiB'"></span>
             </div>
-          </template>
-
-          <h3>Tools &amp; disk</h3>
-          <div class="row small">
-            <span x-text="'ffmpeg: ' + (diag.tools.ffmpeg || 'missing')"></span>
-            <span x-text="'uv: ' + (diag.tools.uv || 'missing')"></span>
-            <span x-text="'disk free: ' + Math.round(diag.disk.free_gib) + ' GiB'"></span>
           </div>
 
-          <h3>Residency</h3>
-          <div class="note">
-            <strong>on-demand</strong>: models unload after the idle timeout and before the other model family needs the GPU. 
-            <strong>always</strong>: models stay resident after every job (both families fit in 24 GB, but tight).
-          </div>
-          <div class="row">
-            <select x-model="residencyForm.residency">
-              <option value="on-demand">on-demand</option>
-              <option value="always">always</option>
-            </select>
-            <label class="inline">Idle release (minutes) <input type="number" step="1" x-model.number="residencyForm.release_idle_minutes"></label>
-            <button class="primary" @click="saveResidency()">Save to config.yaml</button>
+          <div class="subcard">
+            <h3>Residency</h3>
+            <div class="note">
+              <strong>on-demand</strong>: models unload after the idle timeout and before the other model family needs the GPU.
+              <strong>always</strong>: models stay resident after every job (both families fit in 24 GB, but tight).
+            </div>
+            <div class="row">
+              <select x-model="residencyForm.residency">
+                <option value="on-demand">on-demand</option>
+                <option value="always">always</option>
+              </select>
+              <label class="inline">Idle release (minutes) <input type="number" step="1" x-model.number="residencyForm.release_idle_minutes"></label>
+              <button class="primary" @click="saveResidency()">Save to config.yaml</button>
+            </div>
           </div>
 
-          <h3>Config</h3>
-          <pre class="mono small" x-text="jsonString(diag.config)"></pre>
+          <div class="subcard">
+            <h3>Config</h3>
+            <pre class="mono small" x-text="$store.ui.jsonString(diag.config)"></pre>
+          </div>
         </div>
       </template>
     </div>
   </section>
 
+  <!-- ============================== JOBS (all tabs) ============================== -->
+  <div class="card" x-show="$store.ui.jobs.length" x-cloak>
+    <div class="card-head">
+      <h2>Jobs</h2>
+      <div class="inline-group">
+        <button class="ghost btn-sm" @click="$store.ui.refreshJobs()">Refresh</button>
+        <button class="ghost btn-sm" @click="$store.ui.clearJobs()">Clear history</button>
+      </div>
+    </div>
+    <table>
+      <thead><tr><th>#</th><th>Name</th><th>Kind</th><th>Status</th><th>Created</th><th>Error</th><th></th></tr></thead>
+      <tbody>
+        <template x-for="job in $store.ui.jobs.slice(0, 12)" :key="job.id">
+          <tr class="clickable" :class="{watched: job.id === $store.ui.activeJobId}"
+              @click="$store.ui.watch(job.id)" title="Click to follow this job">
+            <td x-text="job.id"></td>
+            <td x-text="job.name || '—'"></td>
+            <td><span class="badge" x-text="job.kind"></span></td>
+            <td>
+              <span class="pill" :class="job.status" x-text="job.status"></span>
+              <span class="muted" x-show="job.status === 'pending' && job.queue && job.queue.total > 1"
+                    x-text="job.queue ? '#' + job.queue.position + ' of ' + job.queue.total : ''"></span>
+            </td>
+            <td x-text="$store.ui.fmtDate(job.created_at)"></td>
+            <td class="error cell-ellipsis" :title="job.error || ''"
+                x-text="job.status === 'failed' ? (job.error || '') : ''"></td>
+            <td><button class="ghost btn-sm" x-show="job.status === 'pending' || job.status === 'running'"
+                        @click.stop="$store.ui.cancelJob(job.id)">Cancel</button></td>
+          </tr>
+        </template>
+      </tbody>
+    </table>
+  </div>
+
 </main>
 
 <!-- detail modal -->
-<div class="modal-backdrop" x-show="detailOpen" @click.self="closeDetail()" x-cloak>
-  <div class="modal" x-show="detail">
+<div class="modal-backdrop" x-show="$store.ui.detailOpen" @click.self="$store.ui.closeDetail()"
+     @keydown.escape.window="$store.ui.detailOpen && $store.ui.closeDetail()" x-cloak>
+  <div class="modal" x-show="$store.ui.detail">
     <div class="card-head">
-      <h2 x-text="detailName"></h2>
-      <button class="ghost" @click="closeDetail()">Close</button>
+      <h2 x-text="$store.ui.detailName"></h2>
+      <button class="ghost" @click="$store.ui.closeDetail()">Close</button>
     </div>
-    <template x-if="detail && detailKind === 'song'">
+    <template x-if="$store.ui.detail && $store.ui.detailKind === 'song'">
       <div>
         <div class="row small">
-          <span class="pill" :class="detail.status" x-text="detail.status"></span>
-          <span x-show="detail.audio_seconds" x-text="'audio ' + fmtDuration(detail.audio_seconds)"></span>
-          <span x-show="detail.decoder" x-text="'decoder: ' + detail.decoder"></span>
+          <span class="pill" :class="$store.ui.detail.status" x-text="$store.ui.detail.status"></span>
+          <span x-show="$store.ui.detail.audio_seconds"
+                x-text="'audio ' + $store.ui.fmtDuration($store.ui.detail.audio_seconds)"></span>
+          <span x-show="$store.ui.detail.decoder" x-text="'decoder: ' + $store.ui.detail.decoder"></span>
         </div>
-        <div class="error" x-show="detail.truncated && (detail.truncated.abc || detail.truncated.semantic)"
-             x-text="'Generation truncated: ' + jsonString(detail.truncated)"></div>
-        <audio controls :src="audioUrl(detailName)" style="width: 100%; margin-top: 10px; display: block" preload="metadata"></audio>
+        <div class="error" x-show="$store.ui.detail.truncated && ($store.ui.detail.truncated.abc || $store.ui.detail.truncated.semantic)"
+             x-text="'Generation truncated: ' + $store.ui.jsonString($store.ui.detail.truncated)"></div>
+        <template x-if="$store.ui.detail && $store.ui.detail.has_audio">
+          <audio controls :src="$store.ui.audioUrl($store.ui.detailName)" class="modal-audio" preload="metadata"></audio>
+        </template>
         <h3>Request</h3>
-        <pre class="mono small" x-text="jsonString(detail.request)"></pre>
+        <pre class="mono small" x-text="$store.ui.jsonString($store.ui.detail.request)"></pre>
         <h3>Result</h3>
-        <pre class="mono small" x-text="jsonString(detail.result)"></pre>
+        <pre class="mono small" x-text="$store.ui.jsonString($store.ui.detail.result)"></pre>
         <h3>Artifacts</h3>
         <div class="tags">
-          <template x-for="artifact in artifactLinks()" :key="artifact.key">
+          <template x-for="artifact in $store.ui.artifactLinks()" :key="artifact.key">
             <a class="tag" :href="artifact.url" target="_blank" rel="noopener" x-text="artifact.key"></a>
           </template>
         </div>
       </div>
     </template>
-    <template x-if="detail && detailKind === 'transcript'">
+    <template x-if="$store.ui.detail && $store.ui.detailKind === 'transcript'">
       <div>
         <div class="row small">
-          <span class="pill" :class="detail.status" x-text="detail.status"></span>
+          <span class="pill" :class="$store.ui.detail.status" x-text="$store.ui.detail.status"></span>
         </div>
-        <div class="error" x-show="(detail.warnings || []).length">
-          <template x-for="(warning, i) in detail.warnings" :key="i">
+        <div class="error" x-show="($store.ui.detail.warnings || []).length">
+          <template x-for="(warning, i) in $store.ui.detail.warnings" :key="i">
             <div x-text="warning"></div>
           </template>
         </div>
         <h3>Score (ABC)</h3>
-        <pre class="mono small" x-text="detail.abc || '(none)'"></pre>
+        <pre class="mono small" x-text="$store.ui.detail.abc || '(none)'"></pre>
         <h3>Manifest</h3>
-        <pre class="mono small" x-text="jsonString(detail.manifest)"></pre>
+        <pre class="mono small" x-text="$store.ui.jsonString($store.ui.detail.manifest)"></pre>
       </div>
     </template>
-    <template x-if="detail && detailKind === 'plan'">
+    <template x-if="$store.ui.detail && $store.ui.detailKind === 'plan'">
       <div>
         <div class="row small">
-          <span class="pill" :class="detail.status" x-text="detail.status"></span>
+          <span class="pill" :class="$store.ui.detail.status" x-text="$store.ui.detail.status"></span>
         </div>
         <h3>Score (ABC)</h3>
-        <pre class="mono small" x-text="detail.abc || '(no score planned)'"></pre>
+        <pre class="mono small" x-text="$store.ui.detail.abc || '(no score planned)'"></pre>
         <h3>Request</h3>
-        <pre class="mono small" x-text="jsonString(detail.request)"></pre>
+        <pre class="mono small" x-text="$store.ui.jsonString($store.ui.detail.request)"></pre>
       </div>
     </template>
   </div>

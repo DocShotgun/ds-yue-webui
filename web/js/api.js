@@ -1,10 +1,16 @@
-/* ds-yue-webui API helpers: fetch wrappers, SSE, formatting. */
+/* ds-yue-webui shared helpers: fetch wrappers, SSE, formatting, ABC rendering. */
 "use strict";
 
 async function errorDetail(response) {
   try {
     const data = await response.json();
-    return (data && (data.detail || data.error)) || "";
+    const detail = data && (data.detail || data.error);
+    if (!detail) return "";
+    if (typeof detail === "string") return detail;
+    if (Array.isArray(detail)) {
+      return detail.map((item) => `${(item.loc || []).join(".")}: ${item.msg}`).join("; ");
+    }
+    return JSON.stringify(detail);
   } catch (_) {
     return "";
   }
@@ -61,13 +67,6 @@ function watchJob(jobId, onJob) {
   return source;
 }
 
-function fmtTime(ts) {
-  if (!ts) return "—";
-  const d = new Date(ts * 1000);
-  const pad = (n) => String(n).padStart(2, "0");
-  return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
-
 function fmtDate(ts) {
   if (!ts) return "—";
   const d = new Date(ts * 1000);
@@ -82,12 +81,7 @@ function fmtDuration(seconds) {
   return m > 0 ? `${m}m ${String(s % 60).padStart(2, "0")}s` : `${s}s`;
 }
 
-function fmtElapsed(startedAt) {
-  if (!startedAt) return "—";
-  return fmtDuration((Date.now() - startedAt * 1000) / 1000);
-}
-
-/* Debounce helper for the ABC preview. */
+/* Debounce helper for the ABC previews. */
 function debounce(fn, ms) {
   let timer = null;
   return function (...args) {
@@ -111,10 +105,45 @@ function renderAbc(element, text) {
   }
 }
 
+function renderAbcById(id, text) {
+  renderAbc(document.getElementById(id), text);
+}
+
 function jsonString(value) {
   try {
     return JSON.stringify(value, null, 2);
   } catch (_) {
     return String(value);
   }
+}
+
+/* Insert a structure tag ([Chorus] etc.) on its own line at the caret. */
+function insertTagAtCursor(area, tag, setValue) {
+  if (!area) {
+    setValue(tag + "\n");
+    return;
+  }
+  const start = area.selectionStart ?? area.value.length;
+  const end = area.selectionEnd ?? start;
+  const lineStart = area.value.lastIndexOf("\n", start - 1) + 1;
+  let lineEnd = area.value.indexOf("\n", start);
+  if (lineEnd === -1) lineEnd = area.value.length;
+  const beforeCursorBlank = area.value.slice(lineStart, start).trim() === "";
+  const atLineStart = start === lineStart;
+  const nextIsNewline = start === area.value.length || area.value[start] === "\n";
+  const text = (beforeCursorBlank && start === end ? (atLineStart ? "" : "\n") : "\n")
+             + tag + (nextIsNewline ? "" : "\n");
+  area.setRangeText(text, start, end, "end");
+  setValue(area.value);
+  const caret = start + text.length;
+  area.focus();
+  area.setSelectionRange(caret, caret);
+}
+
+/* Submit the enclosing form when Enter is pressed outside textareas/buttons. */
+function enterSubmits(event, submit) {
+  const tag = (event.target && event.target.tagName || "").toLowerCase();
+  if (tag === "textarea" || event.target.closest("button, a, select, input[type='file']")) return;
+  event.preventDefault();
+  submit();
 }

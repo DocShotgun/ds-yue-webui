@@ -251,6 +251,43 @@ def test_cancel_and_404(client):
     assert bad.status_code == 404
 
 
+def test_artifact_path_is_sandboxed(client):
+    """Artifact downloads cannot escape the song directory."""
+    response = client.post("/api/jobs", json={
+        "kind": "generate", "name": "sandbox",
+        "params": {"style": "warm piano", "lyrics": "[Verse]\nLa", "cot": "full"}})
+    _poll(client, response.json()["job"]["id"])
+    library = client.get("/api/library").json()
+    name = _name_of(library["songs"][0]["output_dir"])
+    ok = client.get(f"/api/library/songs/{name}/artifacts/result.json")
+    assert ok.status_code == 200
+    for relpath in ("../jobs.db", "result.json/../../result.json", "%2e%2e/jobs.db"):
+        bad = client.get(f"/api/library/songs/{name}/artifacts/{relpath}")
+        assert bad.status_code in (400, 404), relpath
+
+
+def test_pending_jobs_expose_queue_position(client):
+    """The jobs API annotates pending jobs with their position in the queue."""
+    # Freeze the queue loop via the app state so submitted jobs stay pending.
+    queue = client.app.state.queue
+    real_next = queue._next_pending
+    queue._next_pending = lambda: None
+    try:
+        first = client.post("/api/jobs", json={
+            "kind": "plan", "name": "q1", "params": {"style": "warm piano", "lyrics": "la"}}).json()
+        second = client.post("/api/jobs", json={
+            "kind": "plan", "name": "q2", "params": {"style": "warm piano", "lyrics": "la"}}).json()
+        # the submit response is a snapshot; the list reflects the full queue
+        assert first["job"]["queue"]["position"] == 1
+        listed = {job["id"]: job for job in client.get("/api/jobs").json()["jobs"]}
+        assert listed[first["job"]["id"]]["queue"] == {"position": 1, "total": 2}
+        assert listed[second["job"]["id"]]["queue"] == {"position": 2, "total": 2}
+    finally:
+        queue._next_pending = real_next
+    for payload in (first, second):
+        _poll(client, payload["job"]["id"])
+
+
 def test_diagnostics(client):
     response = client.get("/api/diagnostics")
     assert response.status_code == 200

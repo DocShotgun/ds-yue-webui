@@ -364,6 +364,19 @@ class JobQueue:
                             ("server restarted; the job was interrupted", time.time()))
             self.db.commit()
 
+    def _annotate(self, job: dict | None) -> dict | None:
+        """Attach queue position info to pending jobs (the queue is strictly serial)."""
+        if job is None or job["status"] != "pending":
+            return job
+        with self.db_lock:
+            ahead = self.db.execute(
+                "SELECT COUNT(*) FROM jobs WHERE status='pending' AND deleted=0 AND id<?",
+                (job["id"],)).fetchone()[0]
+            total = self.db.execute(
+                "SELECT COUNT(*) FROM jobs WHERE status='pending' AND deleted=0").fetchone()[0]
+        job["queue"] = {"position": ahead + 1, "total": total}
+        return job
+
     def update_progress(self, job_id: int, fields: dict) -> None:
         with self.db_lock:
             self.db.execute("UPDATE jobs SET progress=? WHERE id=? AND status='running'",
@@ -379,18 +392,18 @@ class JobQueue:
             self.db.execute(f"UPDATE jobs SET {', '.join(sets)} WHERE id=?", (*values, job_id))
             self.db.commit()
             row = self.db.execute("SELECT * FROM jobs WHERE id=?", (job_id,)).fetchone()
-        return self._row(row)
+        return self._annotate(self._row(row))
 
     def get(self, job_id: int) -> dict | None:
         with self.db_lock:
             row = self.db.execute("SELECT * FROM jobs WHERE id=?", (job_id,)).fetchone()
-        return self._row(row)
+        return self._annotate(self._row(row))
 
     def list(self, limit: int = 50) -> list[dict]:
         with self.db_lock:
             rows = self.db.execute(
                 "SELECT * FROM jobs WHERE deleted=0 ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
-        return [self._row(row) for row in rows]
+        return [self._annotate(self._row(row)) for row in rows]
 
     def counts(self) -> dict:
         with self.db_lock:

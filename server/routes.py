@@ -13,8 +13,8 @@ from pydantic import BaseModel, Field
 from . import abc_service, library
 from .config import Settings
 from .jobs import TERMINAL
-from .validation import (ValidationError, slugify, unique_directory,
-                         validate_decode, validate_generate, validate_plan, validate_transcribe)
+from .validation import (ValidationError, slugify, validate_decode, validate_generate,
+                         validate_plan, validate_transcribe)
 
 
 class JobRequest(BaseModel):
@@ -42,6 +42,42 @@ class AbcStripRequest(BaseModel):
 class ConfigUpdateRequest(BaseModel):
     residency: str | None = Field(default=None, pattern="^(on-demand|always)$")
     release_idle_minutes: float | None = Field(default=None, ge=0)
+
+
+def _prepare_generate(settings: Settings, name: str | None, kind: str, params: dict) -> list[str]:
+    cleaned, warnings = (validate_generate if kind == "generate" else validate_plan)(settings, params)
+    slug = slugify(name)
+    base = settings.outputs_dir if kind == "generate" else settings.plans_dir
+    params.update(cleaned)
+    params.update({"name": name, "slug": slug, "output_dir": str(library.unique_directory(base, slug))})
+    return warnings
+
+
+def _prepare_transcribe(settings: Settings, name: str | None, kind: str, params: dict) -> list[str]:
+    cleaned, warnings = validate_transcribe(params)
+    audio = settings.uploads_dir / cleaned["audio"]
+    if not audio.is_file():
+        raise ValidationError(f"Uploaded audio {cleaned['audio']!r} is missing")
+    slug = slugify(name or Path(cleaned["audio"]).stem)
+    params.update(cleaned)
+    params.update({"name": name, "slug": slug,
+                   "output_dir": str(library.unique_directory(settings.transcripts_dir, slug))})
+    return warnings
+
+
+def _prepare_decode(settings: Settings, name: str | None, kind: str, params: dict) -> list[str]:
+    cleaned, warnings = validate_decode(params)
+    source_dir = settings.outputs_dir / cleaned["source"]
+    if not (source_dir / "result.json").is_file():
+        raise ValidationError(f"Song {cleaned['source']!r} has no completed result to decode")
+    slug = slugify(f"{cleaned['source']}-{cleaned['vae']}")
+    params.update(cleaned)
+    params.update({"slug": slug, "output_dir": str(library.unique_directory(settings.outputs_dir, slug))})
+    return warnings
+
+
+_PREPARERS = {"generate": _prepare_generate, "plan": _prepare_generate,
+              "transcribe": _prepare_transcribe, "decode": _prepare_decode}
 
 
 def create_router(settings: Settings) -> APIRouter:
@@ -82,33 +118,7 @@ def create_router(settings: Settings) -> APIRouter:
     def submit_job(request: Request, body: JobRequest):
         params = dict(body.params)
         try:
-            warnings: list[str] = []
-            kind = body.kind
-            if kind in ("generate", "plan"):
-                cleaned, warnings = (validate_generate if kind == "generate" else validate_plan)(settings, params)
-                slug = slugify(body.name)
-                base = settings.outputs_dir if kind == "generate" else settings.plans_dir
-                output_dir = unique_directory(base, slug)
-                params.update(cleaned)
-                params.update({"name": body.name, "slug": slug, "output_dir": str(output_dir)})
-            elif kind == "transcribe":
-                cleaned, warnings = validate_transcribe(params)
-                audio = settings.uploads_dir / cleaned["audio"]
-                if not audio.is_file():
-                    raise ValidationError(f"Uploaded audio {cleaned['audio']!r} is missing")
-                slug = slugify(body.name or Path(cleaned["audio"]).stem)
-                output_dir = unique_directory(settings.transcripts_dir, slug)
-                params.update(cleaned)
-                params.update({"name": body.name, "slug": slug, "output_dir": str(output_dir)})
-            else:
-                cleaned, warnings = validate_decode(params)
-                source_dir = settings.outputs_dir / cleaned["source"]
-                if not (source_dir / "result.json").is_file():
-                    raise ValidationError(f"Song {cleaned['source']!r} has no completed result to decode")
-                slug = slugify(f"{cleaned['source']}-{cleaned['vae']}")
-                output_dir = unique_directory(settings.outputs_dir, slug)
-                params.update(cleaned)
-                params.update({"slug": slug, "output_dir": str(output_dir)})
+            warnings = _PREPARERS[body.kind](settings, body.name, body.kind, params)
         except ValidationError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         try:

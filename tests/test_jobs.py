@@ -3,7 +3,8 @@ import json
 import sqlite3
 
 from server.jobs import JobQueue
-from server.validation import slugify, unique_directory
+from server.library import unique_directory
+from server.validation import slugify
 
 from conftest import wait_for_job
 
@@ -69,6 +70,26 @@ def test_serialization_one_at_a_time(queue, tmp_path):
     counts = queue.counts()
     assert counts.get("done") == 3
     assert counts.get("running", 0) in (0, None)
+
+
+def test_pending_queue_position(queue, tmp_path):
+    """Pending jobs expose their 1-based position in the serial queue."""
+    params, _ = make_params("generate", tmp_path)
+    # Freeze the queue loop so the three jobs all stay pending.
+    real_next = queue._next_pending
+    queue._next_pending = lambda: None  # type: ignore[method-assign]
+    try:
+        jobs = [queue.submit("generate", {**params, "slug": f"q{i}"}, f"q{i}") for i in range(3)]
+        first, second, third = (queue.get(job["id"]) for job in jobs)
+        assert first["queue"] == {"position": 1, "total": 3}
+        assert second["queue"] == {"position": 2, "total": 3}
+        assert third["queue"] == {"position": 3, "total": 3}
+        listed = {job["id"]: job for job in queue.list(10)}
+        assert listed[third["id"]]["queue"]["position"] == 3
+    finally:
+        queue._next_pending = real_next  # type: ignore[method-assign]
+    for job in jobs:
+        wait_for_job(queue, job["id"])
 
 
 def test_decode_job(queue, tmp_path):
