@@ -115,7 +115,7 @@ install_server_venv() {
     if [ -n "$YUE_REV_ARG" ]; then YUE_SRC="$YUE_SRC@$YUE_REV_ARG"; fi
     uv pip install --python "$PY" "$YUE_SRC"
   fi
-  uv pip install --python "$PY" fastapi "uvicorn" python-multipart pyyaml "mir_eval>=0.8.2.post1" pretty_midi mido
+  uv pip install --python "$PY" fastapi "uvicorn" python-multipart pyyaml "mir_eval>=0.8.2" pretty_midi mido
   if [ "$LATEST_TORCH" = 1 ]; then
     say "Floating torch to the latest release (torchaudio follows without pinning torch)"
     uv pip install --python "$PY" --upgrade torch torchaudio
