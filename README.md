@@ -44,11 +44,9 @@ cover generation, and editing.
   is unloaded:
   - `on-demand` (default): the GPU is released *before* the other model family needs it,
     and after the idle timeout (`release_idle_minutes`, default 10). Reload happens on
-    demand at the next job. On-demand also offloads a model component whenever it is
-    no longer needed mid-run: the YuE2 AR model moves to CPU during NAR synthesis
-    (covers have the longest prefix, and a resident AR alongside the NAR OOMs 24 GB).
-  - `always`: models stay resident after every job and mid-run (both families fit in
-    24 GB, but tight).
+    demand at the next job.
+  - `always`: models stay resident after every job (needs to be paired with enough
+    VRAM — see `offload_ar` below and the OOM note in Troubleshooting).
   - Toggling between "always"/"on-demand" at runtime is immediate; changing model/vae/device
     restarts that worker on the next job.
 - **ABC validation/compare/strip-chords** run in-process in the server against the
@@ -158,7 +156,7 @@ killed without graceful cleanup on Windows.
 host: 0.0.0.0
 port: 8765
 data_dir: data                 # relative to the project root, or absolute
-residency: on-demand           # on-demand: offload whenever unused (incl. mid-run) | always: keep resident
+residency: on-demand           # on-demand | always
 release_idle_minutes: 10
 offline: false                 # never reach the HF Hub (models must be cached)
 memory_budget_gib: 24.0        # YuE2 memory budget
@@ -171,6 +169,8 @@ yue2:
   device: auto                 # auto | cuda | cpu
   backend: torch               # torch | torch-eager | vllm
   quantization: none           # none | fp8
+  offload_ar: true             # move the AR model to CPU during NAR synthesis
+                               # (needed on 24GB VRAM; disable on larger GPUs)
 sheetsage2:
   # dir: ../SheetSage2         # opt-in: mel-frontend code source (written by
   #                            #   --sheetsage-dir; used by --vendored-mel)
@@ -203,8 +203,9 @@ Diagnostics page (persisted back to this file).
 ## Troubleshooting
 
 - **Out of memory**: switch residency to `on-demand` on the Diagnostics page; check the
-  GPU table. `residency=always` keeps everything resident — covers (longest prefix) can
-  OOM 24 GB during NAR synthesis; on-demand offloads the AR mid-run instead.
+  GPU table. On 24 GB also keep `offload_ar: true`, which moves the YuE2 AR model to CPU
+  during NAR synthesis (covers have the longest prefix, and a resident AR alongside the
+  NAR OOMs 24 GB); VRAM-rich setups can run `residency: always` + `offload_ar: false`.
 - **Audio doesn't play in the browser**: the FLAC format is not supported by Safari —
   switch the Library player to MP3 (converted on demand with ffmpeg; requires ffmpeg
   on PATH).

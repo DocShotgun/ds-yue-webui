@@ -506,11 +506,8 @@ class JobQueue:
     def _build(self, kind: str, params: dict) -> tuple[dict, dict]:
         yue2_spec = {"kind": "yue2", "model": self.settings.yue2_model, "vae": self.settings.yue2_vae,
                      "device": self.settings.yue2_device, "budget": self.settings.memory_budget_gib,
-                     # on-demand implies the AR model is offloaded whenever it is not
-                     # needed (including mid-job during NAR synthesis); "always"
-                     # keeps it resident for speed
-                     "offload_ar": self.settings.residency != "always",
-                     "offline": self.settings.offline}
+                     "backend": self.settings.yue2_backend, "quantization": self.settings.yue2_quantization,
+                     "offload_ar": self.settings.yue2_offload_ar, "offline": self.settings.offline}
         if kind in ("generate", "plan"):
             request = {key: params[key] for key in ("style", "lyrics", "cot", "seed", "cfg_scale", "abc")
                        if params.get(key) is not None}

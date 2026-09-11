@@ -38,6 +38,7 @@ class Settings:
     yue2_device: str = "auto"
     yue2_backend: str = "torch"
     yue2_quantization: str = "none"
+    yue2_offload_ar: bool = True
     sheetsage2_dir: Path = None  # type: ignore[assignment]
     sheetsage2_model: str = "m-a-p/SheetSage2"
     sheetsage2_device: str = "cuda"
@@ -79,6 +80,8 @@ class Settings:
         for key in ("dir", "model", "vae", "vae_legacy", "device", "backend", "quantization"):
             if key in yue2 and yue2[key] is not None:
                 setattr(self, "yue2_" + ("dir" if key == "dir" else key), str(yue2[key]))
+        if "offload_ar" in yue2 and yue2["offload_ar"] is not None:
+            self.yue2_offload_ar = self._as_bool(yue2["offload_ar"])
         for key in ("dir", "model", "device", "dtype"):
             if key in sheetsage and sheetsage[key] is not None:
                 setattr(self, "sheetsage2_" + key, str(sheetsage[key]))
