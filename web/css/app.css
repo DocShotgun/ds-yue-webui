@@ -134,6 +134,7 @@ label {
   min-width: 0;
 }
 label.inline { flex-direction: row; align-items: center; }
+.field-block { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 input, select, textarea {
   background: var(--panel-2);
   border: 1px solid var(--border);

@@ -78,14 +78,15 @@
       <label>Style (genre, instruments, vocal, language, tempo)
         <textarea x-model="g.style" rows="2" placeholder="English, warm piano pop, expressive female voice, acoustic piano, 88 BPM"></textarea>
       </label>
-      <label>Lyrics (section tags structure the song)
+      <div class="field-block">
+        <label for="lyrics-text">Lyrics (section tags structure the song)</label>
         <div class="tags">
           <template x-for="tag in structureTags" :key="tag">
             <button class="tag" @click="insertTag(tag)" x-text="tag"></button>
           </template>
         </div>
         <textarea id="lyrics-text" x-model="g.lyrics" rows="8" placeholder="[Verse]&#10;Neon fades along the lane&#10;[Chorus]&#10;Let the day come into view"></textarea>
-      </label>
+      </div>
 
       <div class="fieldset">
         <h3>ABC score</h3>
@@ -263,14 +264,15 @@
       <label>Style
         <textarea x-model="cover.style" rows="2" placeholder="target style for the cover"></textarea>
       </label>
-      <label>Lyrics
+      <div class="field-block">
+        <label for="cover-lyrics-text">Lyrics</label>
         <div class="tags">
           <template x-for="tag in structureTags" :key="tag">
             <button class="tag" @click="insertTag(tag, 'cover')" x-text="tag"></button>
           </template>
         </div>
         <textarea id="cover-lyrics-text" x-model="cover.lyrics" rows="8" placeholder="lyrics for the cover"></textarea>
-      </label>
+      </div>
       <div class="row">
         <button class="primary" @click="coverSubmit()">Generate cover</button>
         <button class="ghost" @click="cover.step = 2">Back</button>
