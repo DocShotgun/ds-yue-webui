@@ -20,7 +20,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from protocol import serve, load_module  # noqa: E402
+from protocol import serve, load_module, Events  # noqa: E402
 
 _BOOT: dict = {}
 

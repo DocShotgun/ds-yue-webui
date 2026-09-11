@@ -119,6 +119,17 @@ install_server_venv() {
   if [ "$LATEST_TORCH" = 1 ]; then
     say "Floating torch to the latest release (torchaudio follows without pinning torch)"
     uv pip install --python "$PY" --upgrade torch torchaudio
+  else
+    TORCH_VERSION=$("$PY" -c 'import torch; print(torch.__version__.split("+")[0])' 2>/dev/null || true)
+    if [ -n "$TORCH_VERSION" ]; then
+      say "Installing matching torchaudio $TORCH_VERSION for the pinned torch"
+      if ! uv pip install --python "$PY" "torchaudio==$TORCH_VERSION"; then
+        warn "torchaudio==$TORCH_VERSION is not available for your platform/index."
+        warn "Re-run with --vendored-mel to patch SheetSage2's mel frontend instead of torchaudio."
+      fi
+    else
+      warn "Could not determine the installed torch version; install a matching torchaudio manually."
+    fi
   fi
 }
 
@@ -246,7 +257,7 @@ yue2_spec = {
     "sampling": {"abc": {"max_tokens": 64, "min_tokens": 32}, "semantic": {"max_tokens": 128, "min_tokens": 32}},
 }
 sheetsage_spec = {
-    "model": "auto",
+    "model": "m-a-p/SheetSage2",
     "offline": False, "device": "cuda", "dtype": "bf16",
     "audio": str(data_dir / "smoke" / "yue2" / "audio.flac"),
     "task": "full", "preset": "default", "max_seconds": 30,

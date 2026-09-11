@@ -229,6 +229,7 @@ document.addEventListener("alpine:init", () => {
         const logs = (data.logs || []).length;
         this.notify(`Cleared ${data.cleared} ${noun} from the history` +
                     (logs ? ` and ${logs} log${logs === 1 ? "" : "s"}` : ""), "ok");
+        this.closeJobPanel();
         this.refreshJobsQuiet();
       } catch (error) {
         this.notify("Could not clear history: " + error.message, "err");

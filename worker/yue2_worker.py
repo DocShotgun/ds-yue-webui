@@ -128,6 +128,7 @@ def run_decode(pipe, command: dict, output_dir: Path) -> dict:
 def smoke(spec: dict) -> int:
     """Opt-in smoke generator: one small generate with token-capped sampling."""
     pipe = load_pipeline(spec)
+    started = time.monotonic()
     try:
         output_dir = Path(spec["output_dir"])
         request = dict(spec["request"])

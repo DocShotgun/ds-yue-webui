@@ -94,6 +94,11 @@ the result on the Diagnostics page. If the relaxed shared env fails, re-run with
 |---|---|
 | `--strict-pins` | Two venvs exactly per the upstream READMEs: `.venv` (server + YuE2 with its pinned deps) and `.venv-sheetsage2` (torch 2.8 / transformers stack). Sets `worker.python_sheetsage2` in config.yaml. |
 | `--latest-torch` | Float torch beyond the upstream pin. torchaudio 2.11+ follows un-pinned and works with every future torch release. |
+
+By default (no flags) the installer installs torch at YuE2's exact pin and then
+**torchaudio pinned to the same version** — e.g. `torch==2.10.0` gets
+`torchaudio==2.10.0`. If that match is unavailable for your platform, the
+installer warns and points at `--vendored-mel` as the fallback.
 | `--vendored-mel` | Apply the vendored mel-frontend patch (only needed when torchaudio cannot be installed for your torch build). Creates a local model at `data/sheetsage2-model/` (patched code + weights — code from the Hub, or from a local checkout with `--sheetsage-dir`) and points `sheetsage2.model` at it. |
 | `--smoke` | Run the smoke test after installation. |
 | `--data-dir`, `--venv-dir`, `--port`, `--yue-dir`, `--sheetsage-dir`, `--revision`, `--skip-models` | Path/port overrides. |

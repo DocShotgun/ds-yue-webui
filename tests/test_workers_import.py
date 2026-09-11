@@ -60,6 +60,59 @@ def test_yue2_worker_surface():
         assert callable(getattr(module, name, None)), f"{script}: {name} missing or not callable"
 
 
+def test_yue2_smoke_success():
+    """Regression: smoke() referenced an undefined `started` on the success path,
+    which crashed the worker after saving artifacts (install.sh --smoke)."""
+    module = _load("test_yue2_smoke", REPO_ROOT / "worker" / "yue2_worker.py")
+
+    class FakeResult:
+        truncated = False
+
+        def save_artifacts(self, output_dir):
+            (output_dir / "result.json").write_text('{"status": "complete"}', encoding="utf-8")
+            return {"audio_seconds": 1.0, "identity": "x"}
+
+    class FakePipe:
+        def __call__(self, **kwargs):
+            return FakeResult()
+
+        def close(self):
+            pass
+
+    module.load_pipeline = lambda spec: FakePipe()
+    import json
+    import tempfile
+
+    out = Path(tempfile.mkdtemp())
+    code = module.smoke({"output_dir": str(out), "request": {"style": "x", "lyrics": "y"},
+                         "sampling": {"abc": None, "semantic": None}})
+    assert code == 0
+    assert json.loads((out / "result.json").read_text(encoding="utf-8"))["status"] == "complete"
+
+
+def test_sheetsage_smoke_success():
+    """transcribe_once is what install.sh --smoke runs; it must end exit 0 with
+    smoke_status.json and score.abc in place."""
+    module = _load("test_sheetsage_smoke", REPO_ROOT / "worker" / "sheetsage_worker.py")
+    sample = (REPO_ROOT / "tests" / "samples" / "score.abc").read_text(encoding="utf-8")
+
+    class FakeModel:
+        def transcribe(self, audio, **kwargs):
+            output_dir = Path(kwargs["output_dir"])
+            (output_dir / "score.abc").write_text(sample, encoding="utf-8")
+            return {"abc": sample, "abc_error": None, "warnings": [], "elapsed_seconds": 1.0}
+
+    module.load_model = lambda spec: FakeModel()
+    import tempfile
+
+    out = Path(tempfile.mkdtemp())
+    code = module.transcribe_once({"output_dir": str(out), "audio": "clip.wav",
+                                   "task": "full", "preset": "default", "max_seconds": None})
+    assert code == 0
+    assert (out / "smoke_status.json").is_file()
+    assert (out / "score.abc").is_file()
+
+
 def test_worker_protocol_handshake():
     """serve() must emit loading then ready at boot, run a queued job exactly
     once (running -> progress -> job_done), and stop cleanly on shutdown."""

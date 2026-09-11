@@ -277,11 +277,23 @@ def create_router(settings: Settings) -> APIRouter:
             raise HTTPException(status_code=400, detail="invalid upload filename")
         slug = slugify(Path(filename).stem)
         target = unique_file(settings.uploads_dir, slug, Path(filename).suffix or ".bin")
-        data = await upload.read()
-        if len(data) < 1025:
+        total = 0
+        with target.open("wb") as handle:
+            while True:
+                chunk = await upload.read(1 << 20)
+                if not chunk:
+                    break
+                total += len(chunk)
+                handle.write(chunk)
+                if total > 2 * (1 << 30):
+                    break
+        if total < 1025:
+            target.unlink(missing_ok=True)
             raise HTTPException(status_code=400, detail="audio upload is too small")
-        target.write_bytes(data)
-        return {"file": target.name, "path": str(target), "bytes": len(data),
+        if total > 2 * (1 << 30):
+            target.unlink(missing_ok=True)
+            raise HTTPException(status_code=413, detail="audio upload exceeds the 2 GiB limit")
+        return {"file": target.name, "path": str(target), "bytes": total,
                 "dir": str(target.parent)}
 
     # -- diagnostics ---------------------------------------------------------
