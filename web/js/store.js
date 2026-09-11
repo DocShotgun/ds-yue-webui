@@ -62,8 +62,12 @@ document.addEventListener("alpine:init", () => {
     fmtDate: (ts) => fmtDate(ts),
     fmtDuration: (s) => fmtDuration(s),
     jsonString: (v) => jsonString(v),
-    fmtElapsed(ts) {
-      return ts ? fmtDuration((this.now - ts * 1000) / 1000) : "—";
+    /* Elapsed time for the job panel: live while running, frozen at the total once terminal. */
+    jobElapsed(job) {
+      if (!job || !job.started_at) return "—";
+      const active = !JOB_TERMINAL.includes(job.status);
+      const end = active ? this.now : (job.finished_at || job.started_at);
+      return fmtDuration((end * 1000 - job.started_at * 1000) / 1000);
     },
     nameOf(outputDir) {
       if (!outputDir) return "";
@@ -198,7 +202,8 @@ document.addEventListener("alpine:init", () => {
         return queue && queue.total > 1
           ? `queued · position ${queue.position} of ${queue.total}` : "queued";
       }
-      if (JOB_TERMINAL.includes(job.status)) return job.status;
+      /* terminal states are shown by the status pill; avoid echoing them here */
+      if (JOB_TERMINAL.includes(job.status)) return "";
       const progress = job.progress || {};
       if (job.kind === "generate" || job.kind === "plan") {
         const labels = { abc: "planning score", semantic: "generating song",

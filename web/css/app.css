@@ -255,6 +255,7 @@ button.ghost { background: transparent; }
 button.danger { border-color: var(--err); color: var(--err); }
 button.danger:hover { background: rgba(224, 90, 95, 0.12); }
 button.btn-sm { padding: 4px 10px; font-size: 0.8rem; border-radius: 6px; }
+button.btn-toggle { min-width: 60px; text-align: center; }
 
 .note { font-size: 0.83rem; color: var(--text-dim); margin: 8px 0; }
 .note.busy { color: var(--accent-2); }
@@ -411,6 +412,9 @@ summary:hover { color: var(--text); }
   box-shadow: var(--shadow);
 }
 .modal-audio { width: 100%; margin-top: 10px; display: block; }
+/* hidden per-song player: audio must be out of layout flow so toggling Play/Stop
+   never shifts the table */
+.library-audio { display: none; }
 
 /* ---- scrollbars ---- */
 pre.mono::-webkit-scrollbar { width: 10px; height: 10px; }

@@ -66,7 +66,7 @@
              :style="$store.ui.jobPercent($store.ui.jobDetail) !== null ? 'width:' + $store.ui.jobPercent($store.ui.jobDetail) + '%' : ''"></div>
       </div>
       <div class="row small">
-        <span x-text="'elapsed ' + $store.ui.fmtElapsed($store.ui.jobDetail.started_at)"></span>
+        <span x-text="'elapsed ' + $store.ui.jobElapsed($store.ui.jobDetail)"></span>
         <span x-show="$store.ui.jobDetail.progress && $store.ui.jobDetail.progress.tokens"
               x-text="$store.ui.jobDetail.progress ? 'tokens: ' + $store.ui.jobDetail.progress.tokens : ''"></span>
         <span x-show="$store.ui.jobDetail.result && $store.ui.jobDetail.result.audio_seconds"
@@ -392,7 +392,7 @@
               <td x-text="$store.ui.fmtDuration(s.audio_seconds)"></td>
               <td x-text="$store.ui.fmtDate(s.created_at)"></td>
               <td class="actions">
-                <button class="btn-sm" x-show="s.status === 'done' && s.audio"
+                <button class="btn-sm btn-toggle" x-show="s.status === 'done' && s.audio"
                         @click="togglePlay($store.ui.nameOf(s.output_dir))"
                         x-text="playingName === $store.ui.nameOf(s.output_dir) ? 'Stop' : 'Play'"></button>
                 <button class="ghost btn-sm" x-show="s.status === 'done'" title="Open in the Edit tab"
@@ -410,7 +410,7 @@
         </tbody>
       </table>
       <template x-for="s in $store.ui.library.songs.filter(s => playingName === $store.ui.nameOf(s.output_dir))" :key="s.output_dir">
-        <audio :id="'audio-' + $store.ui.nameOf(s.output_dir)" :src="$store.ui.audioUrl($store.ui.nameOf(s.output_dir))" preload="none"></audio>
+        <audio :id="'audio-' + $store.ui.nameOf(s.output_dir)" :src="$store.ui.audioUrl($store.ui.nameOf(s.output_dir))" class="library-audio" preload="none"></audio>
       </template>
     </div>
 
