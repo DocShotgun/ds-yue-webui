@@ -1,0 +1,164 @@
+"""Library operations over native YuE2 song result dirs, transcriptions, and plans."""
+from __future__ import annotations
+
+import re
+import shutil
+import subprocess
+from pathlib import Path
+
+ID_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,179}")
+SONG_KINDS = ("generate", "decode")
+
+
+def _locate(candidates: list[Path], name: str) -> Path | None:
+    if not ID_PATTERN.fullmatch(name or ""):
+        raise ValueError("invalid name")
+    for root in candidates:
+        candidate = root / name
+        if candidate.is_dir():
+            return candidate
+    return None
+
+
+def locate_song(settings, name: str) -> Path:
+    found = _locate([settings.outputs_dir], name)
+    if found is None:
+        raise FileNotFoundError(f"no such song: {name}")
+    return found
+
+
+def locate_transcript(settings, name: str) -> Path:
+    found = _locate([settings.transcripts_dir], name)
+    if found is None:
+        raise FileNotFoundError(f"no such transcript: {name}")
+    return found
+
+
+def locate_plan(settings, name: str) -> Path:
+    found = _locate([settings.plans_dir], name)
+    if found is None:
+        raise FileNotFoundError(f"no such plan: {name}")
+    return found
+
+
+def _read_json(path: Path):
+    import json
+
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+
+
+def read_song(settings, name: str) -> dict:
+    directory = locate_song(settings, name)
+    result = _read_json(directory / "result.json") or {}
+    summary = {
+        "name": directory.name,
+        "dir": str(directory),
+        "status": result.get("status", "incomplete"),
+        "result": result,
+        "request": _read_json(directory / "request.json"),
+        "config": _read_json(directory / "config.json"),
+        "truncated": result.get("truncated"),
+        "audio_seconds": result.get("audio_seconds"),
+        "decoder": result.get("decoder"),
+        "sources": result.get("sources"),
+        "has_audio": (directory / "audio.flac").is_file(),
+        "abc": None,
+    }
+    abc_path = directory / "score.abc"
+    if abc_path.is_file():
+        summary["abc"] = abc_path.read_text(encoding="utf-8", errors="replace")
+    return summary
+
+
+def read_transcript(settings, name: str) -> dict:
+    directory = locate_transcript(settings, name)
+    manifest = _read_json(directory / "transcription_manifest.json") or {}
+    abc_check = _read_json(directory / "abc_check.json")
+    return {
+        "name": directory.name,
+        "dir": str(directory),
+        "status": manifest.get("status", "incomplete"),
+        "manifest": manifest,
+        "warnings": manifest.get("warnings", []),
+        "abc_check": abc_check,
+        "abc": None,
+        "has_audio_manifest": _read_json(directory / "input.json"),
+    }
+
+
+def read_plan(settings, name: str) -> dict:
+    directory = locate_plan(settings, name)
+    plan = _read_json(directory / "plan.json") or {}
+    summary = {
+        "name": directory.name,
+        "dir": str(directory),
+        "status": "complete" if (directory / "plan_manifest.json").is_file() else "incomplete",
+        "request": plan.get("request"),
+        "truncated": plan.get("truncated"),
+        "timing": plan.get("timing"),
+        "abc": None,
+    }
+    abc_path = directory / "score.abc"
+    if abc_path.is_file():
+        summary["abc"] = abc_path.read_text(encoding="utf-8", errors="replace")
+    return summary
+
+
+def song_audio_path(settings, name: str) -> Path:
+    directory = locate_song(settings, name)
+    audio = directory / "audio.flac"
+    if not audio.is_file():
+        raise FileNotFoundError(f"song {name} has no audio.flac")
+    return audio
+
+
+def song_artifact(settings, name: str, relpath: str) -> Path:
+    directory = locate_song(settings, name)
+    parts = [part for part in Path(relpath).parts if part not in ("..",)]
+    if not parts or any(part.startswith(".") and part not in {".abc", ".json", ".npy", ".flac"} for part in parts):
+        raise ValueError("invalid artifact path")
+    candidate = directory.joinpath(*parts)
+    resolved = candidate.resolve()
+    if not str(resolved).startswith(str(directory.resolve())):
+        raise ValueError("invalid artifact path")
+    if not candidate.is_file():
+        raise FileNotFoundError(relpath)
+    return candidate
+
+
+def mp3_path(settings, name: str) -> Path:
+    """Convert audio.flac to mp3 on demand (browser-friendly delivery) with a cache."""
+    source = song_audio_path(settings, name)
+    cache = settings.cache_dir / "audio"
+    cache.mkdir(parents=True, exist_ok=True)
+    target = cache / f"{Path(name).name}.mp3"
+    if target.is_file() and target.stat().st_mtime >= source.stat().st_mtime:
+        return target
+    if not shutil.which("ffmpeg"):
+        raise RuntimeError("ffmpeg is required for mp3 delivery; install it and add it to PATH")
+    result = subprocess.run(
+        ["ffmpeg", "-v", "error", "-y", "-i", str(source), "-codec:a", "libmp3lame", "-q:a", "2", str(target)],
+        capture_output=True, timeout=600, check=False)
+    if result.returncode or not target.is_file():
+        raise RuntimeError("mp3 conversion failed: " + result.stderr.decode(errors="replace")[-400:])
+    return target
+
+
+def delete_directory(settings, name: str, directories: list[Path], job_queue=None) -> None:
+    directory = _locate(directories, name)
+    if directory is None:
+        raise FileNotFoundError(f"no such item: {name}")
+    shutil.rmtree(directory)
+    for cache_item in (settings.cache_dir / "audio" / f"{name}.mp3",):
+        if cache_item.is_file():
+            cache_item.unlink()
+    if job_queue is not None:
+        try:
+            job = next((entry for entry in job_queue.list(500) if (entry.get("output_dir") or "") == str(directory)), None)
+        except Exception:
+            job = None
+        if job is not None:
+            job_queue.mark_deleted(job["id"])

@@ -1,0 +1,586 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ds-yue-webui</title>
+  <link rel="stylesheet" href="/css/app.css">
+  <script defer src="/vendor/abcjs-basic-min.js"></script>
+  <script src="/js/api.js"></script>
+  <script defer src="/js/app.js"></script>
+  <script defer src="/vendor/alpine.min.js"></script>
+</head>
+<body x-data="app()" x-init="init()">
+
+<header class="topbar">
+  <div class="brand">ds-yue-webui <span class="sub">YuE2 song generation · covers · editing</span></div>
+  <nav class="tabs">
+    <button :class="{active: tab==='generate'}" @click="switchTab('generate')">Generate</button>
+    <button :class="{active: tab==='cover'}" @click="switchTab('cover')">Cover</button>
+    <button :class="{active: tab==='edit'}" @click="switchTab('edit')">Edit</button>
+    <button :class="{active: tab==='library'}" @click="switchTab('library')">Library</button>
+    <button :class="{active: tab==='diagnostics'}" @click="switchTab('diagnostics')">Diagnostics</button>
+  </nav>
+  <div class="running-pill" x-show="runningCount() > 0" @click="refreshJobs()">
+    <span x-text="runningCount()"></span> running
+  </div>
+</header>
+
+<div class="toast" x-show="toast" x-transition :class="toast && toast.kind" x-cloak>
+  <span x-text="toast && toast.message"></span>
+</div>
+
+<div class="jobpanel" x-show="activeJobId" x-transition x-cloak>
+  <template x-if="jobDetail">
+    <div>
+      <div class="row">
+        <strong>Job #<span x-text="jobDetail.id"></span></strong>
+        <span class="tag" x-text="jobDetail.kind"></span>
+        <span class="pill" :class="jobDetail.status" x-text="jobDetail.status"></span>
+        <span class="stage" x-text="jobStageLabel()"></span>
+      </div>
+      <div class="progress"><div class="bar" :class="{pulse: jobActive()}" :style="'width:' + jobPercent() + '%'"></div></div>
+      <div class="row small">
+        <span x-text="'elapsed ' + fmtElapsed(jobDetail.started_at)"></span>
+        <span x-show="jobDetail.progress && jobDetail.progress.tokens"
+              x-text="'tokens: ' + jobDetail.progress.tokens"></span>
+        <span x-show="jobDetail.result && jobDetail.result.audio_seconds"
+              x-text="'audio: ' + fmtDuration(jobDetail.result && jobDetail.result.audio_seconds)"></span>
+        <button class="danger" x-show="jobActive()" @click="cancelWatchedJob()">Cancel</button>
+        <button class="ghost" @click="closeJobPanel()">Hide</button>
+      </div>
+      <div class="error" x-show="jobDetail.error" x-text="jobDetail.error"></div>
+    </div>
+  </template>
+</div>
+
+<main>
+
+  <!-- ============================== GENERATE ============================== -->
+  <section x-show="tab==='generate'" x-cloak>
+    <div class="card">
+      <div class="card-head">
+        <h2>Song generation</h2>
+        <div>
+          <button class="ghost" @click="loadExample()">Load example</button>
+        </div>
+      </div>
+      <div class="grid">
+        <label>Name <input type="text" x-model="g.name" placeholder="optional, e.g. city_lights"></label>
+        <label>Conditioning mode
+          <select x-model="g.cot">
+            <option value="full">full — plan melody + chords (editable)</option>
+            <option value="melody">melody — melody-only plan (covers)</option>
+            <option value="off">off — no plan</option>
+          </select>
+        </label>
+      </div>
+      <label>Style (genre, instruments, vocal, language, tempo)
+        <textarea x-model="g.style" rows="2" placeholder="English, warm piano pop, expressive female voice, acoustic piano, 88 BPM"></textarea>
+      </label>
+      <label>Lyrics (section tags structure the song)
+        <div class="tags">
+          <template x-for="tag in structureTags" :key="tag">
+            <button class="tag" @click="insertTag(tag)" x-text="tag"></button>
+          </template>
+        </div>
+        <textarea x-model="g.lyrics" rows="8" placeholder="[Verse]&#10;Neon fades along the lane&#10;[Chorus]&#10;Let the day come into view"></textarea>
+      </label>
+
+      <div class="fieldset">
+        <h3>ABC score</h3>
+        <div class="radios" x-show="g.cot !== 'off'">
+          <label><input type="radio" value="plan" x-model="g.abcMode"> Let the model plan the score</label>
+          <label><input type="radio" value="paste" x-model="g.abcMode"> Provide / edit an ABC score</label>
+          <label x-show="library.plans.length"><input type="radio" value="library" x-model="g.abcMode"> Use a saved plan</label>
+        </div>
+        <div class="note" x-show="g.cot === 'off'">cot=off takes no ABC score.</div>
+
+        <div x-show="g.abcMode === 'paste' && g.cot !== 'off'">
+          <div class="row small" x-show="library.plans.length">
+            <select x-model="g.abcPlanName">
+              <option value="">— choose a saved plan —</option>
+              <template x-for="p in library.plans" :key="p.output_dir">
+                <option :value="nameOf(p.output_dir)" x-text="nameOf(p.output_dir)"></option>
+              </template>
+            </select>
+            <button class="ghost" x-show="g.abcPlanName" @click="loadPlanInto(g.abcPlanName, 'generate')">Load</button>
+          </div>
+          <textarea class="mono" x-model="g.abcText" rows="10" placeholder="X:1&#10;T:&#10;M:4/4&#10;..."></textarea>
+          <div class="row small">
+            <button @click="validateAbc(g.abcText)">Validate</button>
+          </div>
+          <div id="gen-abc-preview" class="abc-preview"></div>
+        </div>
+
+        <div x-show="g.abcMode === 'library' && g.cot !== 'off'">
+          <div class="row small">
+            <select x-model="g.abcPlanName">
+              <option value="">— choose a saved plan —</option>
+              <template x-for="p in library.plans" :key="p.output_dir">
+                <option :value="nameOf(p.output_dir)" x-text="nameOf(p.output_dir)"></option>
+              </template>
+            </select>
+            <button x-show="g.abcPlanName" @click="loadPlanInto(g.abcPlanName, 'generate')">Load into editor</button>
+          </div>
+        </div>
+
+        <details :open="g.advOpen">
+          <summary>Advanced sampling</summary>
+          <template x-for="sectionName in samplingSections" :key="sectionName">
+            <div class="sampling-group">
+              <h4 x-text="sectionName === 'abc' ? 'ABC (plan) sampling' : 'Semantic sampling'"></h4>
+              <template x-if="sectionName === 'abc'">
+                <div class="grid three">
+                  <template x-for="field in samplingFields" :key="'abc' + field[0]">
+                    <label><span x-text="field[2]"></span>
+                      <input :type="field[1]" step="any" x-model="g.abcAdv[field[0]]" :placeholder="field[3]">
+                    </label>
+                  </template>
+                </div>
+              </template>
+              <template x-if="sectionName === 'semantic'">
+                <div class="grid three">
+                  <template x-for="field in samplingFields" :key="'sem' + field[0]">
+                    <label><span x-text="field[2]"></span>
+                      <input :type="field[1]" step="any" x-model="g.semAdv[field[0]]" :placeholder="field[3]">
+                    </label>
+                  </template>
+                </div>
+              </template>
+            </div>
+          </template>
+          <div class="note">Leave blank for the model's checkpoint defaults. Seed and CFG scale are above this panel.</div>
+        </details>
+      </div>
+
+      <div class="row">
+        <label class="inline">Seed <input type="number" x-model.number="g.seed" placeholder="831001"></label>
+        <label class="inline">CFG scale <input type="number" step="0.05" x-model.number="g.cfgScale" placeholder="1.0"></label>
+      </div>
+      <div class="row">
+        <button class="primary" @click="submitGenerate()">Generate song</button>
+      </div>
+    </div>
+
+    <div class="card" x-show="jobs.length">
+      <div class="card-head"><h2>Recent jobs</h2><button class="ghost" @click="refreshJobs()">Refresh</button></div>
+      <table>
+        <thead><tr><th>#</th><th>Kind</th><th>Status</th><th>Created</th><th>Error</th></tr></thead>
+        <tbody>
+          <template x-for="job in jobs.slice(0, 10)" :key="job.id">
+            <tr @click="watch(job.id)" class="clickable">
+              <td x-text="job.id"></td>
+              <td x-text="job.kind"></td>
+              <td><span class="pill" :class="job.status" x-text="job.status"></span></td>
+              <td x-text="fmtDate(job.created_at)"></td>
+              <td class="error" x-text="job.status === 'failed' ? job.error : ''"></td>
+            </tr>
+          </template>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ============================== COVER ============================== -->
+  <section x-show="tab==='cover'" x-cloak>
+    <div class="steps">
+      <div class="step" :class="{current: cover.step >= 1}">1 · Transcribe a recording</div>
+      <div class="step" :class="{current: cover.step >= 2}">2 · Review the melody</div>
+      <div class="step" :class="{current: cover.step >= 3}">3 · Style, lyrics &amp; generate</div>
+    </div>
+
+    <div class="card" x-show="cover.step >= 1">
+      <div class="card-head"><h2>1 · Transcribe a recording (SheetSage2)</h2></div>
+      <div class="note">SheetSage2 transcribes melody + chords (no lyrics — you provide those in step 3).
+        Editing regenerates a complete new recording; the source singer's voice is not preserved.</div>
+      <div class="grid">
+        <label>Audio file <input type="file" accept="audio/*" @change="onCoverFile($event)"></label>
+        <label>Transcription task
+          <select x-model="cover.task">
+            <option value="full">full — melody + chords</option>
+            <option value="melody-full">melody-full — both melodies, no chords</option>
+            <option value="melody-vocal">melody-vocal — vocal melody only</option>
+          </select>
+        </label>
+        <label>Max seconds (optional crop) <input type="number" step="1" x-model.number="cover.maxSeconds" placeholder="whole input"></label>
+        <label>Name <input type="text" x-model="cover.name" placeholder="optional"></label>
+      </div>
+      <div class="row"><button class="primary" @click="coverUpload()">Upload &amp; transcribe</button></div>
+
+      <div class="row small" x-show="cover.step >= 2">
+        Transcript:
+        <select x-model="cover.transcriptName" @change="coverLoadTranscript()">
+          <option value="">— choose a transcription —</option>
+          <template x-for="t in library.transcripts" :key="t.output_dir">
+            <option :value="nameOf(t.output_dir)" x-text="nameOf(t.output_dir)"></option>
+          </template>
+        </select>
+      </div>
+    </div>
+
+    <div class="card" x-show="cover.step >= 2">
+      <div class="card-head"><h2>2 · Review the melody</h2></div>
+      <template x-if="cover.transcript">
+        <div>
+          <div class="row small">
+            <span class="pill" :class="cover.transcript.status" x-text="cover.transcript.status"></span>
+            <span x-text="(cover.transcript.warnings || []).length + ' transcriber warnings'"></span>
+          </div>
+          <div class="note" x-show="(cover.transcript.warnings || []).length">
+            <template x-for="(warning, i) in cover.transcript.warnings" :key="i">
+              <div x-text="warning"></div>
+            </template>
+          </div>
+          <div class="note" x-show="cover.transcript.abc_check && cover.transcript.abc_check.scope"
+               x-text="cover.transcript.abc_check.scope"></div>
+        </div>
+      </template>
+      <textarea class="mono" x-model="cover.abcText" rows="12"></textarea>
+      <div class="row small">
+        <button @click="validateAbc(cover.abcText)">Validate</button>
+        <button class="ghost" x-show="cover.step >= 1" @click="cover.step = 1">Back</button>
+      </div>
+      <div id="cover-abc-preview" class="abc-preview"></div>
+      <div class="row"><button class="primary" @click="coverContinueToStyle()">Continue</button></div>
+    </div>
+
+    <div class="card" x-show="cover.step >= 3">
+      <div class="card-head"><h2>3 · Style, lyrics &amp; generate</h2></div>
+      <div class="radios">
+        <label><input type="radio" :value="false" x-model="cover.keepChords">
+          Strip chords <strong>(recommended)</strong> — the model adapts the accompaniment freely; regenerate with cot=melody</label>
+        <label><input type="radio" :value="true" x-model="cover.keepChords">
+          Keep chords — preserve the original harmony; regenerate with cot=full</label>
+      </div>
+      <div class="grid">
+        <label>Name <input type="text" x-model="cover.name" placeholder="optional"></label>
+        <label>Conditioning (fixed by your chord choice)
+          <input disabled :value="cover.keepChords ? 'full (keep chords)' : 'melody (stripped chords)'">
+        </label>
+      </div>
+      <label>Style
+        <textarea x-model="cover.style" rows="2" placeholder="target style for the cover"></textarea>
+      </label>
+      <label>Lyrics
+        <div class="tags">
+          <template x-for="tag in structureTags" :key="tag">
+            <button class="tag" @click="cover.lyrics = (cover.lyrics ? cover.lyrics.trimEnd() + '\n' : '') + tag + '\n'" x-text="tag"></button>
+          </template>
+        </div>
+        <textarea x-model="cover.lyrics" rows="8" placeholder="lyrics for the cover"></textarea>
+      </label>
+      <div class="row">
+        <button class="primary" @click="coverSubmit()">Generate cover</button>
+        <button class="ghost" @click="cover.step = 2">Back</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================== EDIT ============================== -->
+  <section x-show="tab==='edit'" x-cloak>
+    <div class="card">
+      <div class="card-head"><h2>Edit a composition</h2></div>
+      <div class="note">Editing the score and regenerating produces a complete new recording
+        (the original waveform is not preserved outside your edits). The ABC file is the
+        handoff currency: modify harmony, melody, tempo or form, then regenerate with cot=full.</div>
+      <div class="row">
+        <select x-model="edit.songName" @change="editLoadSong()">
+          <option value="">— choose a completed song —</option>
+          <template x-for="s in library.songs.filter(s => s.status === 'done')" :key="s.output_dir">
+            <option :value="nameOf(s.output_dir)" x-text="nameOf(s.output_dir)"></option>
+          </template>
+        </select>
+        <button class="ghost" @click="refreshEditSongs()">Refresh</button>
+      </div>
+      <template x-if="edit.song">
+        <div>
+          <textarea class="mono" x-model="edit.abcText" rows="14"></textarea>
+          <div class="row small">
+            <button @click="validateAbc(edit.abcText)">Validate</button>
+            <button @click="compareAbc(edit.abcOriginal, edit.abcText)">Compare with original</button>
+            <label class="inline"><input type="checkbox" x-model="edit.allowTempoChange"> allow tempo change</label>
+            <button class="ghost" x-show="edit.abcText !== edit.abcOriginal" @click="edit.abcText = edit.abcOriginal">Revert</button>
+          </div>
+          <div id="edit-abc-preview" class="abc-preview"></div>
+          <template x-if="edit.compareResult">
+            <div class="compare" :class="edit.compareResult.match ? 'ok' : 'changed'">
+              <template x-for="(diff, i) in edit.compareResult.differences" :key="i">
+                <div x-text="diff"></div>
+              </template>
+              <div class="note" x-show="edit.compareResult.match">Sounding notes, meter and tempo are unchanged.</div>
+            </div>
+          </template>
+          <div class="error" x-show="edit.compareError" x-text="edit.compareError"></div>
+
+          <div class="fieldset">
+            <h3>Regenerate with the edited score</h3>
+            <div class="grid">
+              <label>Name <input type="text" x-model="edit.name" placeholder="new name (optional)"></label>
+              <label>Conditioning mode
+                <select x-model="edit.cot">
+                  <option value="full">full — melody + chords</option>
+                  <option value="melody">melody — melody only (chord-free score)</option>
+                </select>
+              </label>
+            </div>
+            <label>Style <textarea x-model="edit.style" rows="2"></textarea></label>
+            <label>Lyrics <textarea x-model="edit.lyrics" rows="8"></textarea></label>
+            <div class="row"><button class="primary" @click="editSubmit()">Regenerate song</button></div>
+          </div>
+        </div>
+      </template>
+    </div>
+  </section>
+
+  <!-- ============================== LIBRARY ============================== -->
+  <section x-show="tab==='library'" x-cloak>
+    <div class="card">
+      <div class="card-head">
+        <h2>Songs</h2>
+        <div>
+          <select x-model="audioFormat">
+            <option value="flac">FLAC (lossless)</option>
+            <option value="mp3">MP3 (browser-friendly)</option>
+          </select>
+          <button class="ghost" @click="refreshLibrary()">Refresh</button>
+        </div>
+      </div>
+      <div class="note" x-show="!library.songs.length">No songs yet — generate one on the Generate tab.</div>
+      <table x-show="library.songs.length">
+        <thead><tr><th>Name</th><th>Status</th><th>Length</th><th>Created</th><th></th></tr></thead>
+        <tbody>
+          <template x-for="s in library.songs" :key="s.output_dir">
+            <tr>
+              <td class="clickable" @click="openDetail('song', nameOf(s.output_dir))" x-text="nameOf(s.output_dir)"></td>
+              <td><span class="pill" :class="s.status" x-text="s.status"></span></td>
+              <td x-text="fmtDuration(s.audio_seconds)"></td>
+              <td x-text="fmtDate(s.created_at)"></td>
+              <td class="row small">
+                <button x-show="s.status === 'done' && s.audio" @click="togglePlay(nameOf(s.output_dir))"
+                        x-text="playingName === nameOf(s.output_dir) ? 'Stop' : 'Play'"></button>
+                <button class="ghost" x-show="s.status === 'done'" @click="redecode(nameOf(s.output_dir), 'standard')">Re-decode</button>
+                <button class="ghost" x-show="s.status === 'done'" @click="redecode(nameOf(s.output_dir), 'legacy')">Legacy</button>
+                <button class="ghost" x-show="s.status === 'done'" @click="openDetail('song', nameOf(s.output_dir))">Edit</button>
+                <button class="danger" @click="deleteItem('song', nameOf(s.output_dir))">Delete</button>
+              </td>
+            </tr>
+          </template>
+        </tbody>
+      </table>
+      <template x-for="s in library.songs.filter(s => playingName === nameOf(s.output_dir))" :key="s.output_dir">
+        <audio :id="'audio-' + nameOf(s.output_dir)" :src="audioUrl(nameOf(s.output_dir))" preload="none"></audio>
+      </template>
+    </div>
+
+    <div class="card">
+      <div class="card-head"><h2>Transcripts</h2></div>
+      <div class="note" x-show="!library.transcripts.length">No transcriptions yet — create one on the Cover tab.</div>
+      <table x-show="library.transcripts.length">
+        <thead><tr><th>Name</th><th>Status</th><th>Created</th><th></th></tr></thead>
+        <tbody>
+          <template x-for="t in library.transcripts" :key="t.output_dir">
+            <tr>
+              <td class="clickable" @click="openDetail('transcript', nameOf(t.output_dir))" x-text="nameOf(t.output_dir)"></td>
+              <td><span class="pill" :class="t.status" x-text="t.status"></span></td>
+              <td x-text="fmtDate(t.created_at)"></td>
+              <td class="row small">
+                <button @click="openDetail('transcript', nameOf(t.output_dir))">Open</button>
+                <button class="danger" @click="deleteItem('transcript', nameOf(t.output_dir))">Delete</button>
+              </td>
+            </tr>
+          </template>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="card">
+      <div class="card-head"><h2>Plans</h2></div>
+      <div class="note" x-show="!library.plans.length">No saved plans yet — plans are saved by plan-only jobs.</div>
+      <table x-show="library.plans.length">
+        <thead><tr><th>Name</th><th>Status</th><th>Created</th><th></th></tr></thead>
+        <tbody>
+          <template x-for="p in library.plans" :key="p.output_dir">
+            <tr>
+              <td class="clickable" @click="openDetail('plan', nameOf(p.output_dir))" x-text="nameOf(p.output_dir)"></td>
+              <td><span class="pill" :class="p.status" x-text="p.status"></span></td>
+              <td x-text="fmtDate(p.created_at)"></td>
+              <td class="row small">
+                <button @click="openDetail('plan', nameOf(p.output_dir))">Open</button>
+                <button class="danger" @click="deleteItem('plan', nameOf(p.output_dir))">Delete</button>
+              </td>
+            </tr>
+          </template>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ============================== DIAGNOSTICS ============================== -->
+  <section x-show="tab==='diagnostics'" x-cloak>
+    <div class="card">
+      <div class="card-head">
+        <h2>Diagnostics</h2>
+        <button class="primary" :disabled="diagLoading" @click="runDiagnostics()" x-text="diagLoading ? 'Checking…' : 'Run check'"></button>
+      </div>
+      <template x-if="diag">
+        <div>
+          <div class="error" x-show="diag.warnings.length">
+            <template x-for="(warning, i) in diag.warnings" :key="i">
+              <div x-text="warning"></div>
+            </template>
+          </div>
+
+          <h3>Environment</h3>
+          <div class="row small">
+            <span class="pill" :class="diag.doctor && diag.doctor.dependencies_ready ? 'done' : 'failed'"
+                  x-text="diag.doctor && diag.doctor.dependencies_ready ? 'dependencies ready' : (diag.doctor && diag.doctor.unavailable ? 'doctor unavailable' : 'dependencies incomplete')"></span>
+            <span x-show="diag.doctor && diag.doctor.unavailable" x-text="diag.doctor && diag.doctor.unavailable"></span>
+          </div>
+          <table x-show="diag.doctor && diag.doctor.versions">
+            <thead><tr><th>Package</th><th>Version</th></tr></thead>
+            <tbody>
+              <template x-for="(version, name) in diag.doctor.versions" :key="name">
+                <tr><td x-text="name"></td><td x-text="version || 'missing'"></td></tr>
+              </template>
+            </tbody>
+          </table>
+
+          <h3>GPU</h3>
+          <div class="note" x-show="!diag.gpus.length">nvidia-smi unavailable or no GPU.</div>
+          <table x-show="diag.gpus.length">
+            <thead><tr><th>GPU</th><th>Memory</th><th>Utilization</th></tr></thead>
+            <tbody>
+              <template x-for="(gpu, i) in diag.gpus" :key="i">
+                <tr>
+                  <td x-text="gpu.name"></td>
+                  <td x-text="gpu.memory_used_mib + ' / ' + gpu.memory_total_mib + ' MiB'"></td>
+                  <td x-text="gpu.utilization_percent + '%'"></td>
+                </tr>
+              </template>
+            </tbody>
+          </table>
+
+          <h3>Queue &amp; workers</h3>
+          <div class="row small">
+            <template x-for="(count, status) in diag.queue.counts" :key="status">
+              <span class="tag"><span x-text="status + ': ' + count"></span></span>
+            </template>
+          </div>
+          <table>
+            <thead><tr><th>Worker</th><th>State</th><th>PID</th><th>Idle</th></tr></thead>
+            <tbody>
+              <template x-for="worker in diag.queue.workers" :key="worker.kind">
+                <tr>
+                  <td x-text="worker.kind"></td>
+                  <td><span class="pill" :class="worker.model_state || 'idle'" x-text="worker.model_state || 'not loaded'"></span></td>
+                  <td x-text="worker.pid || '—'"></td>
+                  <td x-text="worker.idle_seconds !== null && worker.idle_seconds !== undefined ? fmtDuration(worker.idle_seconds) : '—'"></td>
+                </tr>
+              </template>
+            </tbody>
+          </table>
+
+          <h3>Smoke test</h3>
+          <div class="note" x-show="!diag.smoke">Not run. Opt in during install with <code>install.sh --smoke</code>; the report appears here.</div>
+          <template x-if="diag.smoke">
+            <div>
+              <div class="row small">
+                <span class="pill" :class="diag.smoke.passed ? 'done' : 'failed'" x-text="diag.smoke.passed ? 'passed' : 'failed'"></span>
+              </div>
+              <div class="note" x-show="!diag.smoke.passed">If the relaxed shared env failed, re-run <code>install.sh --strict-pins</code> and point worker.python_sheetsage2 back at the patched model as documented.</div>
+              <pre class="mono small" x-text="jsonString(diag.smoke)"></pre>
+            </div>
+          </template>
+
+          <h3>Tools &amp; disk</h3>
+          <div class="row small">
+            <span x-text="'ffmpeg: ' + (diag.tools.ffmpeg || 'missing')"></span>
+            <span x-text="'uv: ' + (diag.tools.uv || 'missing')"></span>
+            <span x-text="'disk free: ' + Math.round(diag.disk.free_gib) + ' GiB'"></span>
+          </div>
+
+          <h3>Residency</h3>
+          <div class="note">
+            <strong>on-demand</strong>: models unload after the idle timeout and before the other model family needs the GPU. 
+            <strong>always</strong>: models stay resident after every job (both families fit in 24 GB, but tight).
+          </div>
+          <div class="row">
+            <select x-model="residencyForm.residency">
+              <option value="on-demand">on-demand</option>
+              <option value="always">always</option>
+            </select>
+            <label class="inline">Idle release (minutes) <input type="number" step="1" x-model.number="residencyForm.release_idle_minutes"></label>
+            <button class="primary" @click="saveResidency()">Save to config.yaml</button>
+          </div>
+
+          <h3>Config</h3>
+          <pre class="mono small" x-text="jsonString(diag.config)"></pre>
+        </div>
+      </template>
+    </div>
+  </section>
+
+</main>
+
+<!-- detail modal -->
+<div class="modal-backdrop" x-show="detailOpen" @click.self="closeDetail()" x-cloak>
+  <div class="modal" x-show="detail">
+    <div class="card-head">
+      <h2 x-text="detailName"></h2>
+      <button class="ghost" @click="closeDetail()">Close</button>
+    </div>
+    <template x-if="detail && detailKind === 'song'">
+      <div>
+        <div class="row small">
+          <span class="pill" :class="detail.status" x-text="detail.status"></span>
+          <span x-show="detail.audio_seconds" x-text="'audio ' + fmtDuration(detail.audio_seconds)"></span>
+          <span x-show="detail.decoder" x-text="'decoder: ' + detail.decoder"></span>
+        </div>
+        <div class="error" x-show="detail.truncated && (detail.truncated.abc || detail.truncated.semantic)"
+             x-text="'Generation truncated: ' + jsonString(detail.truncated)"></div>
+        <audio controls :src="audioUrl(detailName)" style="width: 100%" preload="metadata"></audio>
+        <h3>Request</h3>
+        <pre class="mono small" x-text="jsonString(detail.request)"></pre>
+        <h3>Result</h3>
+        <pre class="mono small" x-text="jsonString(detail.result)"></pre>
+        <h3>Artifacts</h3>
+        <div class="tags">
+          <template x-for="artifact in artifactLinks()" :key="artifact.key">
+            <a class="tag" :href="artifact.url" target="_blank" rel="noopener" x-text="artifact.key"></a>
+          </template>
+        </div>
+      </div>
+    </template>
+    <template x-if="detail && detailKind === 'transcript'">
+      <div>
+        <div class="row small">
+          <span class="pill" :class="detail.status" x-text="detail.status"></span>
+        </div>
+        <div class="error" x-show="(detail.warnings || []).length">
+          <template x-for="(warning, i) in detail.warnings" :key="i">
+            <div x-text="warning"></div>
+          </template>
+        </div>
+        <h3>Score (ABC)</h3>
+        <pre class="mono small" x-text="detail.abc || '(none)'"></pre>
+        <h3>Manifest</h3>
+        <pre class="mono small" x-text="jsonString(detail.manifest)"></pre>
+      </div>
+    </template>
+    <template x-if="detail && detailKind === 'plan'">
+      <div>
+        <div class="row small">
+          <span class="pill" :class="detail.status" x-text="detail.status"></span>
+        </div>
+        <h3>Score (ABC)</h3>
+        <pre class="mono small" x-text="detail.abc || '(no score planned)'"></pre>
+        <h3>Request</h3>
+        <pre class="mono small" x-text="jsonString(detail.request)"></pre>
+      </div>
+    </template>
+  </div>
+</div>
+
+</body>
+</html>
