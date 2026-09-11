@@ -247,10 +247,6 @@ document.addEventListener("alpine:init", () => {
       return Object.keys(cleaned).length ? cleaned : null;
     },
 
-    insertTag(tag) {
-      this.g.lyrics = (this.g.lyrics ? this.g.lyrics.trimEnd() + "\n" : "") + tag + "\n";
-    },
-
     async loadExample() {
       const example = this.config && this.config.example_request;
       if (!example) { this.notify("No example request available", "err"); return; }
@@ -312,10 +308,13 @@ document.addEventListener("alpine:init", () => {
       const start = area.selectionStart ?? area.value.length;
       const end = area.selectionEnd ?? start;
       const lineStart = area.value.lastIndexOf("\n", start - 1) + 1;
-      const lineEnd = area.value.indexOf("\n", start);
+      let lineEnd = area.value.indexOf("\n", start);
       if (lineEnd === -1) lineEnd = area.value.length;
-      const isBlankLine = area.value.slice(lineStart, end).trim() === "";
-      const text = isBlankLine && start === lineStart ? tag + "\n" : "\n" + tag + "\n";
+      const beforeCursorBlank = area.value.slice(lineStart, start).trim() === "";
+      const atLineStart = start === lineStart;
+      const nextIsNewline = start === area.value.length || area.value[start] === "\n";
+      const text = (beforeCursorBlank && start === end ? (atLineStart ? "" : "\n") : "\n")
+                 + tag + (nextIsNewline ? "" : "\n");
       area.setRangeText(text, start, end, "end");
       model.lyrics = area.value;
       const caret = start + text.length;
