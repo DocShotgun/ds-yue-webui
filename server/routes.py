@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field
 from . import abc_service, library
 from .config import Settings
 from .jobs import TERMINAL
-from .validation import (ValidationError, slugify, unique_directory, unique_file,
+from .validation import (ValidationError, slugify, unique_directory,
                          validate_decode, validate_generate, validate_plan, validate_transcribe)
 
 
@@ -265,6 +265,11 @@ def create_router(settings: Settings) -> APIRouter:
     # -- uploads -------------------------------------------------------------
     @router.post("/uploads")
     async def upload_audio(request: Request):
+        """Stage the upload in RAM while hashing it, then dedupe against the
+        uploads directory before touching disk — re-uploading the same audio
+        reuses the first copy without writing anything."""
+        import hashlib
+
         content_type = request.headers.get("content-type", "")
         if "multipart/form-data" not in content_type:
             raise HTTPException(status_code=400, detail="upload with multipart/form-data")
@@ -275,26 +280,30 @@ def create_router(settings: Settings) -> APIRouter:
         filename = Path(upload.filename or "audio").name
         if not filename or filename.startswith("."):
             raise HTTPException(status_code=400, detail="invalid upload filename")
-        slug = slugify(Path(filename).stem)
-        target = unique_file(settings.uploads_dir, slug, Path(filename).suffix or ".bin")
+        digest = hashlib.sha256()
+        chunks = []
         total = 0
-        with target.open("wb") as handle:
-            while True:
-                chunk = await upload.read(1 << 20)
-                if not chunk:
-                    break
-                total += len(chunk)
-                handle.write(chunk)
-                if total > 2 * (1 << 30):
-                    break
+        while True:
+            chunk = await upload.read(1 << 20)
+            if not chunk:
+                break
+            total += len(chunk)
+            digest.update(chunk)
+            chunks.append(chunk)
+            if total > 2 * (1 << 30):
+                raise HTTPException(status_code=413, detail="audio upload exceeds the 2 GiB limit")
         if total < 1025:
-            target.unlink(missing_ok=True)
             raise HTTPException(status_code=400, detail="audio upload is too small")
-        if total > 2 * (1 << 30):
-            target.unlink(missing_ok=True)
-            raise HTTPException(status_code=413, detail="audio upload exceeds the 2 GiB limit")
+        slug = slugify(Path(filename).stem)
+        ext = Path(filename).suffix or ".bin"
+        target = settings.uploads_dir / f"{slug}-{digest.hexdigest()[:16]}{ext}"
+        deduped = target.is_file()
+        if not deduped:
+            settings.uploads_dir.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(b"".join(chunks))
+        chunks.clear()
         return {"file": target.name, "path": str(target), "bytes": total,
-                "dir": str(target.parent)}
+                "deduped": deduped, "dir": str(target.parent)}
 
     # -- diagnostics ---------------------------------------------------------
     @router.get("/diagnostics")

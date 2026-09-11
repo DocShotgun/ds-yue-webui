@@ -188,6 +188,9 @@ def list_directory_items(directory: Path, kind: str) -> list[dict]:
 
 
 def delete_directory(settings, name: str, directories: list[Path], job_queue=None) -> None:
+    """Delete a Library item's files (plus its cached mp3). The jobs history is
+    left untouched: entries stay, IDs stay contiguous, and old entries keep
+    their recorded data — deleting an artifact does not erase the audit trail."""
     directory = _locate(directories, name)
     if directory is None:
         raise FileNotFoundError(f"no such item: {name}")
@@ -201,13 +204,6 @@ def delete_directory(settings, name: str, directories: list[Path], job_queue=Non
         if active is not None:
             raise ValueError(f"an active job is writing to this directory "
                              f"(job #{active['id']}); cancel it first")
-        try:
-            job = next((entry for entry in job_queue.list(500)
-                        if (entry.get("output_dir") or "") == str(directory)), None)
-        except Exception:
-            job = None
-        if job is not None:
-            job_queue.mark_deleted(job["id"])
     shutil.rmtree(directory)
     for cache_item in (settings.cache_dir / "audio" / f"{name}.mp3",):
         if cache_item.is_file():

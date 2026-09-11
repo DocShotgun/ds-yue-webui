@@ -35,7 +35,7 @@
     <div>
       <div class="row">
         <strong>Job #<span x-text="jobDetail.id"></span></strong>
-        <span class="tag" x-text="jobDetail.kind"></span>
+        <span class="badge" x-text="jobDetail.kind"></span>
         <span class="pill" :class="jobDetail.status" x-text="jobDetail.status"></span>
         <span class="stage" x-text="jobStageLabel()"></span>
       </div>
@@ -111,7 +111,10 @@
           <div class="row small">
             <button @click="validateAbc(g.abcText)">Validate</button>
           </div>
-          <div id="gen-abc-preview" class="abc-preview"></div>
+          <details class="abc-details" @toggle="if ($el.open) rerenderAbc('gen-abc-preview', g.abcText)">
+            <summary>ABC preview</summary>
+            <div id="gen-abc-preview" class="abc-preview"></div>
+          </details>
         </div>
 
         <div x-show="g.abcMode === 'library' && g.cot !== 'off'">
@@ -243,7 +246,10 @@
         <button @click="validateAbc(cover.abcText)">Validate</button>
         <button class="ghost" x-show="cover.step >= 1" @click="cover.step = 1">Back</button>
       </div>
-      <div id="cover-abc-preview" class="abc-preview"></div>
+      <details class="abc-details" @toggle="if ($el.open) rerenderAbc('cover-abc-preview', cover.abcText)">
+        <summary>ABC preview</summary>
+        <div id="cover-abc-preview" class="abc-preview"></div>
+      </details>
       <div class="row"><button class="primary" @click="coverContinueToStyle()">Continue</button></div>
     </div>
 
@@ -305,7 +311,10 @@
             <label class="inline"><input type="checkbox" x-model="edit.allowTempoChange"> allow tempo change</label>
             <button class="ghost" x-show="edit.abcText !== edit.abcOriginal" @click="edit.abcText = edit.abcOriginal">Revert</button>
           </div>
-          <div id="edit-abc-preview" class="abc-preview"></div>
+          <details class="abc-details" @toggle="if ($el.open) rerenderAbc('edit-abc-preview', edit.abcText)">
+            <summary>ABC preview</summary>
+            <div id="edit-abc-preview" class="abc-preview"></div>
+          </details>
           <template x-if="edit.compareResult">
             <div class="compare" :class="edit.compareResult.match ? 'ok' : 'changed'">
               <template x-for="(diff, i) in edit.compareResult.differences" :key="i">
@@ -467,7 +476,7 @@
           <h3>Queue &amp; workers</h3>
           <div class="row small">
             <template x-for="(count, status) in diag.queue.counts" :key="status">
-              <span class="tag"><span x-text="status + ': ' + count"></span></span>
+              <span class="badge" x-text="status + ': ' + count"></span>
             </template>
           </div>
           <table>

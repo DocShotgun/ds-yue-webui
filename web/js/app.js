@@ -68,9 +68,9 @@ document.addEventListener("alpine:init", () => {
         this.g.abcAdv[key] = null;
         this.g.semAdv[key] = null;
       }
-      this.$watch("g.abcText", debounce((value) => { const el = document.getElementById("gen-abc-preview"); if (el) renderAbc(el, value); }, 300));
-      this.$watch("cover.abcText", debounce((value) => { const el = document.getElementById("cover-abc-preview"); if (el) renderAbc(el, value); }, 300));
-      this.$watch("edit.abcText", debounce((value) => { const el = document.getElementById("edit-abc-preview"); if (el) renderAbc(el, value); }, 300));
+      this.$watch("g.abcText", debounce((value) => this.rerenderAbc("gen-abc-preview", value), 300));
+      this.$watch("cover.abcText", debounce((value) => this.rerenderAbc("cover-abc-preview", value), 300));
+      this.$watch("edit.abcText", debounce((value) => this.rerenderAbc("edit-abc-preview", value), 300));
       try {
         this.config = await api.get("/api/config");
         this.residencyForm.residency = this.config.residency || "on-demand";
@@ -130,7 +130,8 @@ document.addEventListener("alpine:init", () => {
       if (this.jobSource) this.jobSource.close();
       this.jobSource = watchJob(jobId, async (job) => {
         if (!job) {
-          this.jobDetail = null;
+          this.closeJobPanel();
+          this.notify(`Job #${jobId} is no longer in the history`, "err");
           return;
         }
         this.jobDetail = job;
@@ -222,13 +223,14 @@ document.addEventListener("alpine:init", () => {
     },
 
     async clearJobs() {
-      if (!confirm("Clear the entire jobs history and worker logs? Files in the Library are untouched; job records are deleted and IDs restart at #1.")) return;
+      if (!confirm("Clear the entire jobs history, worker logs, and uploaded audio? Files in the Library are untouched; job records are deleted and IDs restart at #1.")) return;
       try {
         const data = await api.del("/api/jobs");
         const noun = data.cleared === 1 ? "job" : "jobs";
         const logs = (data.logs || []).length;
-        this.notify(`Cleared ${data.cleared} ${noun} from the history` +
-                    (logs ? ` and ${logs} log${logs === 1 ? "" : "s"}` : ""), "ok");
+        const uploads = data.uploads || 0;
+        this.notify(`Cleared ${data.cleared} ${noun}, ${logs} log${logs === 1 ? "" : "s"}, ` +
+                    `and ${uploads} upload${uploads === 1 ? "" : "s"}`, "ok");
         this.closeJobPanel();
         this.refreshJobsQuiet();
       } catch (error) {
@@ -322,6 +324,11 @@ document.addEventListener("alpine:init", () => {
       area.setSelectionRange(caret, caret);
     },
 
+    rerenderAbc(id, text) {
+      const el = document.getElementById(id);
+      if (el) renderAbc(el, text);
+    },
+
     async submit(name, kind, params) {
       try {
         const data = await api.post("/api/jobs", { kind, name, params });
@@ -393,7 +400,8 @@ document.addEventListener("alpine:init", () => {
         const upload = await api.upload("/api/uploads", form);
         const name = this.cover.name || null;
         const audioName = upload.file;
-        this.notify(`Uploaded ${audioName}; queuing transcription…`, "ok");
+        if (upload.deduped) this.notify(`${audioName} was already uploaded — reusing it`, "ok");
+        else this.notify(`Uploaded ${audioName}; queuing transcription…`, "ok");
         await new Promise((resolve) => setTimeout(resolve, 300));
         const params = { audio: audioName, task: this.cover.task };
         if (this.cover.maxSeconds !== null && this.cover.maxSeconds !== undefined && this.cover.maxSeconds !== "") {
@@ -577,6 +585,7 @@ document.addEventListener("alpine:init", () => {
         await api.del(`/api/library/${endpoint}/${encodeURIComponent(name)}`);
         this.notify(`Deleted ${name}`, "ok");
         await this.refreshLibrary();
+        this.refreshJobsQuiet();
       } catch (error) {
         this.notify("Delete failed: " + error.message, "err");
       }

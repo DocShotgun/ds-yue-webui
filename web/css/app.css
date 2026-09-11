@@ -213,6 +213,7 @@ td.row.small { gap: 6px; }
   text-decoration: none;
 }
 .tag:hover { border-color: var(--accent); color: var(--accent-2); }
+.badge { display: inline-block; padding: 2px 10px; border-radius: 6px; font-size: 0.78rem; background: var(--panel-2); border: 1px solid var(--border); color: var(--text-dim); }
 .tags { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 4px; }
 
 /* ---- steps ---- */

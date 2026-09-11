@@ -403,10 +403,12 @@ class JobQueue:
             self.db.commit()
 
     def clear(self) -> dict:
-        """Delete the jobs history and the worker logs; resetting the job counter.
+        """Delete the jobs history, worker logs, and uploaded audio; reset the counter.
 
-        Rows are removed outright (the Library is directory-based, so entries
-        there are unaffected) and sqlite_sequence is reset so the next job is #1.
+        ALL rows are removed outright — including soft-deleted (cancelled) ones,
+        since AUTOINCREMENT would otherwise continue past them and the next job
+        would not be #1. The Library is directory-based, so entries there are
+        unaffected.
         """
         with self.db_lock:
             active = self.db.execute(
@@ -415,9 +417,20 @@ class JobQueue:
             if active is not None:
                 raise ValueError(f"cannot clear history while job #{active[0]} is {active[1]}; "
                                  "cancel it first")
-            cursor = self.db.execute("DELETE FROM jobs WHERE deleted=0")
+            cursor = self.db.execute("DELETE FROM jobs")
             self.db.execute("DELETE FROM sqlite_sequence WHERE name='jobs'")
             self.db.commit()
+        uploads_deleted = 0
+        uploads_dir = self.settings.uploads_dir
+        if uploads_dir.is_dir():
+            for upload_file in sorted(uploads_dir.iterdir()):
+                if not upload_file.is_file():
+                    continue
+                try:
+                    upload_file.unlink()
+                    uploads_deleted += 1
+                except OSError:
+                    continue
         logs = []
         logs_dir = self.settings.logs_dir
         if logs_dir.is_dir():
@@ -433,7 +446,7 @@ class JobQueue:
                         logs.append(log_file.name)
                     except OSError:
                         continue
-        return {"cleared": cursor.rowcount, "logs": logs}
+        return {"cleared": cursor.rowcount, "logs": logs, "uploads": uploads_deleted}
 
     # -- submission ----------------------------------------------------------
     def submit(self, kind: str, params: dict, name: str | None = None) -> dict:

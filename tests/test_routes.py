@@ -138,6 +138,38 @@ def test_transcript_detail_has_abc(client):
     assert "[Verse]" in detail["abc"] or detail["abc"].strip()
 
 
+def test_upload_dedup(client):
+    """Re-uploading the same audio reuses the first copy (content-hash names)."""
+    audio = b"\x01" * 4096
+    first = client.post("/api/uploads", files={"file": ("clip.wav", audio, "audio/wav")})
+    second = client.post("/api/uploads", files={"file": ("clip.wav", audio, "audio/wav")})
+    assert first.status_code == 200 and second.status_code == 200
+    assert first.json()["deduped"] is False
+    assert second.json()["deduped"] is True
+    assert first.json()["file"] == second.json()["file"]
+
+
+def test_library_delete_keeps_job_history(client):
+    """Deleting a Library item removes only its files; the job rows stay so IDs
+    stay contiguous and old entries keep their recorded data."""
+    response = client.post("/api/jobs", json={
+        "kind": "plan", "name": "delete keep test",
+        "params": {"style": "warm piano", "lyrics": "[Verse]\nLa"}})
+    assert response.status_code == 200
+    _poll(client, response.json()["job"]["id"])
+    library = client.get("/api/library").json()
+    name = _name_of(library["plans"][0]["output_dir"])
+    deleted = client.delete(f"/api/library/plans/{name}")
+    assert deleted.status_code == 200
+    assert not client.get("/api/library").json()["plans"]
+    jobs = client.get("/api/jobs").json()["jobs"]
+    assert jobs, "the job rows must remain in the history"
+    item = next((job for job in jobs if (job["output_dir"] or "").endswith(name)), None)
+    assert item is not None and item["status"] == "done"
+    detail = client.get(f"/api/jobs/{item['id']}").json()
+    assert detail["status"] == "done"
+
+
 def test_transcribe_flow(client):
     audio = b"\x01" * 4096
     upload = client.post("/api/uploads", files={"file": ("clip.wav", audio, "audio/wav")})
