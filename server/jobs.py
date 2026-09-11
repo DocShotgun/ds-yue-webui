@@ -90,6 +90,9 @@ class ResidentWorker:
             stdin=subprocess.PIPE, stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True, encoding="utf-8", bufsize=1,
+            # UTF-8 mode: the runtime writes json with default-encoding calls,
+            # and the Windows locale default (cp1252) mangles non-ASCII text
+            env={**os.environ, "PYTHONUTF8": "1"},
             cwd=str(self.settings.root))
         self._append_log(f"\n===== boot {time.strftime('%Y-%m-%dT%H:%M:%S')} pid={self.proc.pid} =====\n")
         threading.Thread(target=self._stderr_pump, args=(self.proc,), daemon=True).start()
@@ -503,8 +506,11 @@ class JobQueue:
     def _build(self, kind: str, params: dict) -> tuple[dict, dict]:
         yue2_spec = {"kind": "yue2", "model": self.settings.yue2_model, "vae": self.settings.yue2_vae,
                      "device": self.settings.yue2_device, "budget": self.settings.memory_budget_gib,
-                     "backend": self.settings.yue2_backend, "quantization": self.settings.yue2_quantization,
-                     "offload_ar": self.settings.yue2_offload_ar, "offline": self.settings.offline}
+                     # on-demand implies the AR model is offloaded whenever it is not
+                     # needed (including mid-job during NAR synthesis); "always"
+                     # keeps it resident for speed
+                     "offload_ar": self.settings.residency != "always",
+                     "offline": self.settings.offline}
         if kind in ("generate", "plan"):
             request = {key: params[key] for key in ("style", "lyrics", "cot", "seed", "cfg_scale", "abc")
                        if params.get(key) is not None}

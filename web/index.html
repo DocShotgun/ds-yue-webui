@@ -109,8 +109,8 @@
         <label>Name <input type="text" x-model="g.name" placeholder="optional, e.g. city_lights"></label>
         <label>Conditioning mode
           <select x-model="g.cot">
-            <option value="full">full — plan melody + chords (editable)</option>
-            <option value="melody">melody — melody-only plan (covers)</option>
+            <option value="full">full — melody + chords</option>
+            <option value="melody">melody — melody only (chord-free score)</option>
             <option value="off">off — no plan</option>
           </select>
         </label>
@@ -171,24 +171,24 @@
             <button class="btn-sm" x-show="g.abcPlanName" @click="loadPlan()">Load into editor</button>
           </div>
         </div>
-
-        <details :open="g.advOpen">
-          <summary>Advanced sampling</summary>
-          <template x-for="sectionName in ['abc', 'semantic']" :key="sectionName">
-            <div class="sampling-group">
-              <h4 x-text="sectionName === 'abc' ? 'ABC (plan) sampling' : 'Semantic sampling'"></h4>
-              <div class="grid three">
-                <template x-for="field in samplingFields" :key="sectionName + field[0]">
-                  <label><span x-text="field[2]"></span>
-                    <input :type="field[1]" step="any" x-model="g[sectionName === 'abc' ? 'abcAdv' : 'semAdv'][field[0]]" :placeholder="field[3]">
-                  </label>
-                </template>
-              </div>
-            </div>
-          </template>
-          <div class="note">Leave blank for the model's checkpoint defaults. Seed and CFG scale are above this panel.</div>
-        </details>
       </div>
+
+      <details class="adv-sampling" :open="g.advOpen">
+        <summary>Advanced sampling</summary>
+        <template x-for="sectionName in ['abc', 'semantic']" :key="sectionName">
+          <div class="sampling-group">
+            <h4 x-text="sectionName === 'abc' ? 'ABC (plan) sampling' : 'Semantic sampling'"></h4>
+            <div class="grid three">
+              <template x-for="field in samplingFields" :key="sectionName + field[0]">
+                <label><span x-text="field[2]"></span>
+                  <input :type="field[1]" step="any" x-model="g[sectionName === 'abc' ? 'abcAdv' : 'semAdv'][field[0]]" :placeholder="field[3]">
+                </label>
+              </template>
+            </div>
+          </div>
+        </template>
+        <div class="note">Leave blank for the model's checkpoint defaults. Seed and CFG scale are below this panel.</div>
+      </details>
 
       <div class="row">
         <label class="inline">Seed <input type="number" x-model.number="g.seed" placeholder="831001"></label>
@@ -224,8 +224,8 @@
           </select>
         </label>
         <label>Max seconds (optional crop) <input type="number" step="1" x-model.number="cover.maxSeconds" placeholder="whole input"></label>
-        <label>Name <input type="text" x-model="cover.name" placeholder="optional"></label>
       </div>
+      <div class="note small">The transcription job is named after the uploaded file.</div>
       <div class="row">
         <button class="primary" :disabled="transcribing" @click="upload()"
                 x-text="transcribing ? 'Transcribing…' : 'Upload & transcribe'"></button>
@@ -286,11 +286,11 @@
       <div class="grid">
         <label>Name <input type="text" x-model="cover.name" placeholder="optional"></label>
         <label>Conditioning (fixed by your chord choice)
-          <input disabled :value="cover.keepChords ? 'full (keep chords)' : 'melody (stripped chords)'">
+          <input disabled :value="cover.keepChords ? 'full — melody + chords' : 'melody — melody only (chord-free score)'">
         </label>
       </div>
       <label>Style
-        <textarea x-model="cover.style" rows="2" placeholder="target style for the cover"></textarea>
+        <textarea x-model="cover.style" rows="2" placeholder="English, synth pop, expressive female voice, analog pads, 100 BPM"></textarea>
       </label>
       <div class="field-block">
         <label for="cover-lyrics-text">Lyrics</label>
@@ -299,7 +299,25 @@
             <button class="tag" @click="insertTag(tag)" x-text="tag"></button>
           </template>
         </div>
-        <textarea id="cover-lyrics-text" x-model="cover.lyrics" rows="8" placeholder="lyrics for the cover"></textarea>
+        <textarea id="cover-lyrics-text" x-model="cover.lyrics" rows="8" placeholder="[Verse]&#10;Neon fades along the lane&#10;[Chorus]&#10;Let the day come into view"></textarea>
+      </div>
+      <details class="adv-sampling" :open="cover.advOpen">
+        <summary>Advanced sampling</summary>
+        <div class="sampling-group">
+          <h4>Sampling (ABC conditioning)</h4>
+          <div class="grid three">
+            <template x-for="field in samplingFields" :key="field[0]">
+              <label><span x-text="field[2]"></span>
+                <input :type="field[1]" step="any" x-model="cover.abcAdv[field[0]]" :placeholder="field[3]">
+              </label>
+            </template>
+          </div>
+        </div>
+        <div class="note">Leave blank for the model's checkpoint defaults. Seed and CFG scale are below this panel.</div>
+      </details>
+      <div class="row">
+        <label class="inline">Seed <input type="number" x-model.number="cover.seed" placeholder="831001"></label>
+        <label class="inline">CFG scale <input type="number" step="0.05" x-model.number="cover.cfgScale" placeholder="1.0"></label>
       </div>
       <div class="row">
         <button class="primary" @click="submitCover()">Generate cover</button>
@@ -371,8 +389,26 @@
                 </select>
               </label>
             </div>
-            <label>Style <textarea x-model="edit.style" rows="2"></textarea></label>
-            <label>Lyrics <textarea x-model="edit.lyrics" rows="8"></textarea></label>
+            <label>Style <textarea x-model="edit.style" rows="2" placeholder="English, synth pop, expressive female voice, analog pads, 100 BPM"></textarea></label>
+            <label>Lyrics <textarea x-model="edit.lyrics" rows="8" placeholder="[Verse]&#10;Neon fades along the lane&#10;[Chorus]&#10;Let the day come into view"></textarea></label>
+            <details class="adv-sampling" :open="edit.advOpen">
+              <summary>Advanced sampling</summary>
+              <div class="sampling-group">
+                <h4>Sampling (ABC conditioning)</h4>
+                <div class="grid three">
+                  <template x-for="field in samplingFields" :key="field[0]">
+                    <label><span x-text="field[2]"></span>
+                      <input :type="field[1]" step="any" x-model="edit.abcAdv[field[0]]" :placeholder="field[3]">
+                    </label>
+                  </template>
+                </div>
+              </div>
+              <div class="note">Leave blank for the model's checkpoint defaults. Seed and CFG scale are below this panel.</div>
+            </details>
+            <div class="row">
+              <label class="inline">Seed <input type="number" x-model.number="edit.seed" placeholder="optional"></label>
+              <label class="inline">CFG scale <input type="number" step="0.05" x-model.number="edit.cfgScale" placeholder="optional"></label>
+            </div>
             <div class="row"><button class="primary" @click="submitEdit()">Regenerate song</button></div>
           </div>
         </div>
@@ -462,6 +498,7 @@
       <div class="empty" x-show="!$store.ui.library.plans.length">
         <svg width="42" height="42" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6s1.5-2 5-2 5 2 5 2v14s-1.5-1-5-1-5 1-5 1zM22 6s-1.5-2-5-2-5 2-5 2v14s1.5-1 5-1 5 1 5 1z"/></svg>
         <div>No saved plans yet — use "Plan only" on the Generate tab.</div>
+        <button class="ghost btn-sm" @click="$store.ui.switchTab('generate')">Go to Generate →</button>
       </div>
       <table x-show="$store.ui.library.plans.length">
         <thead><tr><th>Name</th><th>Status</th><th>Created</th><th></th></tr></thead>

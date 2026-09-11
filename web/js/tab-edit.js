@@ -3,16 +3,27 @@
 
 document.addEventListener("alpine:init", () => {
   Alpine.data("editTab", () => ({
+    samplingFields: [
+      ["temperature", "number", "temperature", "0–5, default 1.0"],
+      ["top_p", "number", "top-p", "0–1, default 0.95"],
+      ["top_k", "number", "top-k", "integer, default 100"],
+      ["repetition_penalty", "number", "rep penalty", "> 0, default 1.2"],
+      ["penalty_window", "number", "rep window", "1–100, default 50"],
+      ["min_tokens", "number", "min tokens", "integer, default 0"],
+      ["max_tokens", "number", "max tokens", "integer"],
+    ],
     edit: {
       songName: "", song: null,
       abcOriginal: "", abcText: "",
       compareResult: null, compareError: null, allowTempoChange: false,
       style: "", lyrics: "", cot: "full", name: "",
+      seed: null, cfgScale: null, advOpen: false, abcAdv: {},
     },
 
     get store() { return this.$store.ui; },
 
     init() {
+      for (const [key] of this.samplingFields) this.edit.abcAdv[key] = null;
       this.$watch("edit.abcText", debounce((value) => renderAbcById("edit-abc-preview", value), 300));
       this.$watch("$store.ui.editRequest", (request) => {
         if (request) this.loadSong(request.name);
@@ -44,6 +55,8 @@ document.addEventListener("alpine:init", () => {
         this.edit.style = request.style || "";
         this.edit.lyrics = request.lyrics || "";
         this.edit.cot = request.cot === "melody" ? "melody" : "full";
+        this.edit.seed = request.seed ?? null;
+        this.edit.cfgScale = request.cfg_scale ?? null;
         this.edit.compareResult = null;
         this.edit.compareError = null;
       } catch (error) {
@@ -85,6 +98,15 @@ document.addEventListener("alpine:init", () => {
       }
     },
 
+    cleanedSampling() {
+      const cleaned = {};
+      for (const [key] of this.samplingFields) {
+        const value = this.edit.abcAdv[key];
+        if (value !== null && value !== undefined && value !== "") cleaned[key] = Number(value);
+      }
+      return Object.keys(cleaned).length ? { abc: cleaned } : null;
+    },
+
     async submitEdit() {
       if (!this.edit.abcText.trim()) {
         this.store.notify("Score is empty", "err");
@@ -100,6 +122,14 @@ document.addEventListener("alpine:init", () => {
         cot: this.edit.cot,
         abc: this.edit.abcText,
       };
+      if (this.edit.seed !== null && this.edit.seed !== undefined && this.edit.seed !== "") {
+        params.seed = Number(this.edit.seed);
+      }
+      if (this.edit.cfgScale !== null && this.edit.cfgScale !== undefined && this.edit.cfgScale !== "") {
+        params.cfg_scale = Number(this.edit.cfgScale);
+      }
+      const sampling = this.cleanedSampling();
+      if (sampling) params.sampling = sampling;
       await this.store.submit("generate", this.edit.name || null, params);
     },
 

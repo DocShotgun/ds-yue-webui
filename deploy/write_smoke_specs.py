@@ -22,7 +22,7 @@ def main() -> int:
     # Token-capped sampling keeps the smoke generate short (~1-2 minutes on 24GB).
     yue2_spec = {
         "model": "m-a-p/YuE2-3B", "vae": "m-a-p/YuE2-Vae", "device": "auto",
-        "budget": 24.0, "backend": "torch", "quantization": "none", "offload_ar": False,
+        "budget": 24.0, "backend": "torch", "quantization": "none", "offload_ar": True,
         "offline": False,
         "output_dir": str(data_dir / "smoke" / "yue2"),
         "request": request,

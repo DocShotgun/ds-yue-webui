@@ -44,8 +44,11 @@ cover generation, and editing.
   is unloaded:
   - `on-demand` (default): the GPU is released *before* the other model family needs it,
     and after the idle timeout (`release_idle_minutes`, default 10). Reload happens on
-    demand at the next job.
-  - `always`: models stay resident after every job (both families fit in 24 GB, but tight).
+    demand at the next job. On-demand also offloads a model component whenever it is
+    no longer needed mid-run: the YuE2 AR model moves to CPU during NAR synthesis
+    (covers have the longest prefix, and a resident AR alongside the NAR OOMs 24 GB).
+  - `always`: models stay resident after every job and mid-run (both families fit in
+    24 GB, but tight).
   - Toggling between "always"/"on-demand" at runtime is immediate; changing model/vae/device
     restarts that worker on the next job.
 - **ABC validation/compare/strip-chords** run in-process in the server against the
@@ -155,7 +158,7 @@ killed without graceful cleanup on Windows.
 host: 0.0.0.0
 port: 8765
 data_dir: data                 # relative to the project root, or absolute
-residency: on-demand           # on-demand | always
+residency: on-demand           # on-demand: offload whenever unused (incl. mid-run) | always: keep resident
 release_idle_minutes: 10
 offline: false                 # never reach the HF Hub (models must be cached)
 memory_budget_gib: 24.0        # YuE2 memory budget
@@ -168,7 +171,6 @@ yue2:
   device: auto                 # auto | cuda | cpu
   backend: torch               # torch | torch-eager | vllm
   quantization: none           # none | fp8
-  offload_ar: false
 sheetsage2:
   # dir: ../SheetSage2         # opt-in: mel-frontend code source (written by
   #                            #   --sheetsage-dir; used by --vendored-mel)
@@ -201,7 +203,8 @@ Diagnostics page (persisted back to this file).
 ## Troubleshooting
 
 - **Out of memory**: switch residency to `on-demand` on the Diagnostics page; check the
-  GPU table. Both families resident with `residency=always` is tight but works on 24 GB.
+  GPU table. `residency=always` keeps everything resident — covers (longest prefix) can
+  OOM 24 GB during NAR synthesis; on-demand offloads the AR mid-run instead.
 - **Audio doesn't play in the browser**: the FLAC format is not supported by Safari —
   switch the Library player to MP3 (converted on demand with ffmpeg; requires ffmpeg
   on PATH).
@@ -225,16 +228,3 @@ Diagnostics page (persisted back to this file).
 - Lyrics are always provided by you — no ASR.
 - Uploads/songs/transcripts/plans live under `data/` (gitignored).
 - A 12 GB budget caps `vae_core_frames` at 512 (mirrors the CLI's budget heuristic).
-
-## Testing
-
-Dev-side (Windows, GPU-free): mock model workers share the real NDJSON protocol, so
-the full pipeline (queue → worker subprocess → SSE → DB) is exercised on any machine:
-
-```bash
-uv venv .venv
-uv pip install --python .venv/Scripts/python.exe fastapi uvicorn python-multipart pyyaml pytest httpx
-uv run pytest            # or: .venv/Scripts/python -m pytest tests -q
-```
-
-Server-side smoke: `bash deploy/install.sh --smoke`.

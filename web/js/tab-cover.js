@@ -4,16 +4,27 @@
 document.addEventListener("alpine:init", () => {
   Alpine.data("coverTab", () => ({
     structureTags: ["[Intro]", "[Verse]", "[Pre-Chorus]", "[Chorus]", "[Bridge]", "[Outro]"],
+    samplingFields: [
+      ["temperature", "number", "temperature", "0–5, default 1.0"],
+      ["top_p", "number", "top-p", "0–1, default 0.95"],
+      ["top_k", "number", "top-k", "integer, default 100"],
+      ["repetition_penalty", "number", "rep penalty", "> 0, default 1.2"],
+      ["penalty_window", "number", "rep window", "1–100, default 50"],
+      ["min_tokens", "number", "min tokens", "integer, default 0"],
+      ["max_tokens", "number", "max tokens", "integer"],
+    ],
     cover: {
       step: 1, file: null, task: "full", maxSeconds: null, name: "",
       transcriptName: "", transcript: null, abcText: "",
       keepChords: false, style: "", lyrics: "",
+      seed: null, cfgScale: null, advOpen: false, abcAdv: {},
     },
     transcribing: false,
 
     get store() { return this.$store.ui; },
 
     init() {
+      for (const [key] of this.samplingFields) this.cover.abcAdv[key] = null;
       this.$watch("cover.abcText", debounce((value) => renderAbcById("cover-abc-preview", value), 300));
     },
 
@@ -50,7 +61,10 @@ document.addEventListener("alpine:init", () => {
         params.max_seconds = Number(this.cover.maxSeconds);
       }
       this.transcribing = true;
-      const job = await this.store.submit("transcribe", this.cover.name || null, params, {
+      // the transcription job is named after the uploaded file — extension and
+      // dedupe digest stripped — not a stale form field
+      const jobName = upload.file.replace(/\.[^/.]+$/, "").replace(/-[0-9a-f]{16}$/, "");
+      const job = await this.store.submit("transcribe", jobName, params, {
         onFinished: async (finished) => {
           this.transcribing = false;
           if (finished.status !== "done") return;
@@ -95,6 +109,15 @@ document.addEventListener("alpine:init", () => {
       this.cover.step = 3;
     },
 
+    cleanedSampling() {
+      const cleaned = {};
+      for (const [key] of this.samplingFields) {
+        const value = this.cover.abcAdv[key];
+        if (value !== null && value !== undefined && value !== "") cleaned[key] = Number(value);
+      }
+      return Object.keys(cleaned).length ? { abc: cleaned } : null;
+    },
+
     async submitCover() {
       if (this.transcribing) return;
       if (!this.cover.style.trim()) {
@@ -112,6 +135,14 @@ document.addEventListener("alpine:init", () => {
         cot: this.cover.keepChords ? "full" : "melody",
         abc: this.cover.abcText,
       };
+      if (this.cover.seed !== null && this.cover.seed !== undefined && this.cover.seed !== "") {
+        params.seed = Number(this.cover.seed);
+      }
+      if (this.cover.cfgScale !== null && this.cover.cfgScale !== undefined && this.cover.cfgScale !== "") {
+        params.cfg_scale = Number(this.cover.cfgScale);
+      }
+      const sampling = this.cleanedSampling();
+      if (sampling) params.sampling = sampling;
       await this.store.submit("generate", this.cover.name || null, params);
     },
 

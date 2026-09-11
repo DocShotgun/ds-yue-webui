@@ -58,7 +58,8 @@ def main() -> int:
                 "device": "auto",           # auto | cuda | cpu
                 "backend": "torch",         # torch | torch-eager | vllm
                 "quantization": "none",     # none | fp8
-                "offload_ar": False,
+                # note: mid-run AR offload follows residency — on-demand offloads
+                # the AR whenever it is unused, always keeps it resident
             },
             "sheetsage2": {
                 "model": "auto",            # auto: local dir with weights, else m-a-p/SheetSage2

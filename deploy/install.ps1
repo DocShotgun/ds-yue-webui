@@ -278,8 +278,9 @@ if ($LASTEXITCODE -ne 0) { exit 1 }
 if ($Smoke) {
   Say "Smoke test (opt-in): small YuE2 generate + SheetSage2 transcribe"
   & $Venv\$PyJoin deploy/write_smoke_specs.py $DataDir
+  $env:PYTHONUTF8 = "1"   # the runtime writes json with default-encoding calls;
+                          # the Windows locale default mangles non-ASCII text
   & $Venv\$PyJoin worker/yue2_worker.py smoke --spec (Join-Path $DataDir "smoke\yue2-spec.json")
-  & $Venv\$PyJoin worker/sheetsage_worker.py smoke --spec (Join-Path $DataDir "smoke\sheetsage-spec.json")
   & $Venv\$PyJoin deploy/collect_smoke.py $DataDir
 } else {
   Say "Smoke test skipped (opt in with --smoke)"

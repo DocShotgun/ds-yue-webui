@@ -372,6 +372,7 @@ fieldset h3, .fieldset h3 { margin-top: 4px; }
 .radios { display: flex; flex-direction: column; gap: 8px; margin: 8px 0; }
 .radios label { flex-direction: row; align-items: center; font-size: 0.88rem; color: var(--text); }
 .sampling-group { margin-bottom: 12px; }
+.adv-sampling { margin-top: 12px; }
 summary { cursor: pointer; color: var(--text-dim); font-size: 0.9rem; }
 summary:hover { color: var(--text); }
 

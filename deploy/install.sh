@@ -216,7 +216,7 @@ if [ "$STRICT_PINS" = 1 ]; then STRICT_FLAG="--strict-pins"; fi
 if [ "$SMOKE" = 1 ]; then
   say "Smoke test (opt-in): small YuE2 generate + SheetSage2 transcribe"
   "$PY" deploy/write_smoke_specs.py "$DATA_DIR"
-  "$VENV/bin/python" worker/yue2_worker.py smoke --spec "$DATA_DIR/smoke/yue2-spec.json"
+  PYTHONUTF8=1 "$VENV/bin/python" worker/yue2_worker.py smoke --spec "$DATA_DIR/smoke/yue2-spec.json"
   "$VENV/bin/python" worker/sheetsage_worker.py smoke --spec "$DATA_DIR/smoke/sheetsage-spec.json"
   "$PY" deploy/collect_smoke.py "$DATA_DIR"
 else

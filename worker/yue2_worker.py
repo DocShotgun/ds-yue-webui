@@ -13,12 +13,48 @@ from __future__ import annotations
 import argparse
 import importlib.util
 import json
+import os
 import sys
 import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from protocol import serve  # noqa: E402
+
+
+def _read_json_text(path: Path) -> str:
+    """Read json text as utf-8, falling back to the locale codec for files the
+    YuE2 runtime wrote with the default locale encoding (cp1252 on Windows)."""
+    raw = path.read_bytes()
+    try:
+        return raw.decode("utf-8")
+    except UnicodeDecodeError:
+        try:
+            return raw.decode("mbcs")
+        except (LookupError, UnicodeDecodeError):
+            return raw.decode("utf-8", errors="replace")
+
+
+def _patch_runtime_write_json() -> None:
+    """Rebind yue2.storage.write_json with an explicit utf-8 encoding. The
+    runtime writes json with write_text() and no encoding, so the Windows
+    locale codec mangles non-ASCII text into invalid utf-8. Server-managed
+    workers run with PYTHONUTF8=1, which fixes the default encoding for every
+    call site; this rebinding covers direct CLI runs (smoke, transcribe_once)
+    that may not have the env set. From-imports bind the original at import
+    time, so patch every loaded yue2 module that references it."""
+    import sys
+
+    def write_json(path, value):
+        text = json.dumps(value, indent=2, ensure_ascii=False, allow_nan=False) + "\n"
+        path = Path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = path.with_name(path.name + f".{os.getpid()}.tmp")
+        temporary.write_text(text, encoding="utf-8")
+        os.replace(temporary, path)
+    for name, module in list(sys.modules.items()):
+        if name.startswith("yue2") and hasattr(module, "write_json"):
+            module.write_json = write_json
 
 
 def load_pipeline(spec: dict):
@@ -29,7 +65,10 @@ def load_pipeline(spec: dict):
     # sure the after-release reload runs on the main thread too).
     import numpy  # noqa: F401
     import soundfile  # noqa: F401
+    import yue2.storage  # noqa: F401  (loaded so the json patch sees its binding)
     from yue2 import YuE2Pipeline
+
+    _patch_runtime_write_json()
 
     budget = float(spec.get("budget", 24.0))
     pipeline = YuE2Pipeline.from_pretrained(
@@ -107,7 +146,7 @@ def run_decode(pipe, command: dict, output_dir: Path) -> dict:
     for name in ("result.json", "semantic.npy", "latent.npy"):
         if not (source_dir / name).is_file():
             raise ValueError(f"Source song is missing {name}: {source_dir}")
-    source_result = json.loads((source_dir / "result.json").read_text())
+    source_result = json.loads(_read_json_text(source_dir / "result.json"))
     if source_result.get("status") != "complete":
         raise ValueError("Source song did not complete")
     source_mot = (source_result.get("weights") or {}).get("mot")
@@ -128,7 +167,7 @@ def run_decode(pipe, command: dict, output_dir: Path) -> dict:
     plan.save(output_dir)
     np.save(output_dir / "semantic.npy", semantic.astype(np.int32))
     np.save(output_dir / "latent.npy", latents.astype(np.float32))
-    request = json.loads((source_dir / "request.json").read_text())
+    request = json.loads(_read_json_text(source_dir / "request.json"))
     (output_dir / "request.json").write_text(json.dumps(request, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     sf.write(output_dir / "audio.flac", audio, 48000, subtype="PCM_24")
     result = {"status": "complete", "output": str(output_dir), "decoder": "standard" if vae == "standard" else vae,

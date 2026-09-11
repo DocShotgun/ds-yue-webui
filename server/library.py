@@ -57,7 +57,20 @@ def _read_json(path: Path):
     import json
 
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
+        raw = path.read_bytes()
+    except OSError:
+        return None
+    try:
+        text = raw.decode("utf-8")
+    except UnicodeDecodeError:
+        # the YuE2 runtime historically wrote json with the locale encoding
+        # (cp1252 on Windows), producing files valid JSON cannot read as utf-8
+        try:
+            text = raw.decode("mbcs")
+        except (LookupError, UnicodeDecodeError):
+            text = raw.decode("utf-8", errors="replace")
+    try:
+        return json.loads(text.lstrip("﻿"))
     except (OSError, ValueError):
         return None
 

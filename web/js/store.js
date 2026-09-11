@@ -92,10 +92,10 @@ document.addEventListener("alpine:init", () => {
     jsonString: (v) => jsonString(v),
     /* Elapsed time for the job panel: live while running, frozen at the total once terminal. */
     jobElapsed(job) {
-      if (!job || !job.started_at) return "—";
+      if (!job || !job.started_at) return "-";
       const active = !JOB_TERMINAL.includes(job.status);
-      const end = active ? this.now : (job.finished_at || job.started_at);
-      return fmtDuration((end * 1000 - job.started_at * 1000) / 1000);
+      const end = active ? this.now / 1000 : (job.finished_at || job.started_at);
+      return fmtDuration(end - job.started_at);
     },
     nameOf(outputDir) {
       if (!outputDir) return "";
