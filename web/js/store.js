@@ -24,6 +24,9 @@ document.addEventListener("alpine:init", () => {
     library: { songs: [], transcripts: [], plans: [] },
     audioFormat: "flac",
 
+    /* --- theme (per-browser preference; system follows the OS) --- */
+    theme: "system",
+
     /* --- detail modal --- */
     detail: null,
     detailKind: null,
@@ -42,12 +45,37 @@ document.addEventListener("alpine:init", () => {
     _watchFinished: null,
     _pollTimer: null,
     _statuses: {},
+    _mql: null,
 
     bootstrap() {
       setInterval(() => { this.now = Date.now(); }, 1000);
+      this.initTheme();
       this.loadConfig();
       this.refreshJobs();
       this.refreshLibrary();
+    },
+
+    /* ---------- theme ---------- */
+    initTheme() {
+      const stored = localStorage.getItem("yue-theme");
+      if (stored === "system" || stored === "light" || stored === "dark") this.theme = stored;
+      this._mql = window.matchMedia("(prefers-color-scheme: dark)");
+      const onChange = () => { if (this.theme === "system") this.applyTheme(); };
+      if (this._mql.addEventListener) this._mql.addEventListener("change", onChange);
+      else if (this._mql.addListener) this._mql.addListener(onChange);
+      this.applyTheme();
+    },
+    applyTheme() {
+      const effective = this.theme === "system"
+        ? (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light")
+        : this.theme;
+      document.documentElement.classList.toggle("light", effective === "light");
+    },
+    cycleTheme() {
+      const order = ["system", "light", "dark"];
+      this.theme = order[(order.indexOf(this.theme) + 1) % order.length];
+      localStorage.setItem("yue-theme", this.theme);
+      this.applyTheme();
     },
 
     async loadConfig() {
