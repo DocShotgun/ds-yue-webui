@@ -87,6 +87,22 @@ def test_solve_plan_endpoint_flow(client):
     assert library["plans"]
 
 
+def test_clear_history_endpoint(client):
+    response = client.post("/api/jobs", json={
+        "kind": "plan", "name": "clear test",
+        "params": {"style": "warm piano", "lyrics": "[Verse]\nLa"}})
+    assert response.status_code == 200
+    _poll(client, response.json()["job"]["id"])
+    assert client.get("/api/jobs").json()["jobs"]
+    cleared = client.delete("/api/jobs")
+    assert cleared.status_code == 200, cleared.text
+    assert cleared.json()["cleared"] >= 1
+    assert client.get("/api/jobs").json()["jobs"] == []
+    again = client.delete("/api/jobs")
+    assert again.status_code == 200
+    assert again.json()["cleared"] == 0
+
+
 def test_transcribe_flow(client):
     audio = b"\x01" * 4096
     upload = client.post("/api/uploads", files={"file": ("clip.wav", audio, "audio/wav")})

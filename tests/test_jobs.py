@@ -104,3 +104,20 @@ def test_job_recovery_on_restart(settings, tmp_path):
         assert "interrupted" in done[0]["error"]
     finally:
         q.shutdown()
+
+
+def test_clear_history(queue, tmp_path):
+    import pytest
+
+    params, _ = make_params("generate", tmp_path)
+    job = queue.submit("generate", {**params, "slug": "clear-test"}, "clear test")
+    with queue.db_lock:
+        queue.db.execute("UPDATE jobs SET status='running' WHERE id=?", (job["id"],))
+    with pytest.raises(ValueError):
+        queue.clear()
+    wait_for_job(queue, job["id"])
+    cleared = queue.clear()
+    assert cleared["cleared"] >= 1
+    assert queue.list() == []
+    assert queue.counts() == {}
+    queue.clear()  # idempotent on an empty history

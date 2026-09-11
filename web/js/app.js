@@ -221,6 +221,18 @@ document.addEventListener("alpine:init", () => {
       this.jobDetail = null;
     },
 
+    async clearJobs() {
+      if (!confirm("Clear the entire jobs history? Files on disk are untouched; only the records are hidden.")) return;
+      try {
+        const data = await api.del("/api/jobs");
+        const noun = data.cleared === 1 ? "job" : "jobs";
+        this.notify(`Cleared ${data.cleared} ${noun} from the history`, "ok");
+        this.refreshJobsQuiet();
+      } catch (error) {
+        this.notify("Could not clear history: " + error.message, "err");
+      }
+    },
+
     /* --- generate --- */
     cleanedSampling(section) {
       const source = section === "abc" ? this.g.abcAdv : this.g.semAdv;
@@ -264,9 +276,9 @@ document.addEventListener("alpine:init", () => {
       }
     },
 
-    async submitGenerate() {
+    async submitGenerate(planOnly) {
       const form = this.g;
-      if (this.g.abcMode !== "plan") {
+      if (!planOnly && this.g.abcMode !== "plan") {
         if (!this.g.abcText.trim()) { this.notify("ABC score is empty", "err"); return; }
       }
       const params = {
@@ -276,7 +288,7 @@ document.addEventListener("alpine:init", () => {
       };
       if (form.seed !== null && form.seed !== undefined && form.seed !== "") params.seed = Number(form.seed);
       if (form.cfgScale !== null && form.cfgScale !== undefined && form.cfgScale !== "") params.cfg_scale = Number(form.cfgScale);
-      if (this.g.abcMode !== "plan") {
+      if (!planOnly && this.g.abcMode !== "plan") {
         params.abc = this.g.abcText;
         const sampling = this.cleanedSampling("abc");
         if (sampling) params.sampling = { abc: sampling };
@@ -287,7 +299,24 @@ document.addEventListener("alpine:init", () => {
           params.sampling = { abc: sampling, semantic: semantic };
         }
       }
-      await this.submit(form.name || null, "generate", params);
+      await this.submit(form.name || null, planOnly ? "plan" : "generate", params);
+    },
+
+    insertTag(tag) {
+      const area = document.getElementById("lyrics-text");
+      if (!area) { this.g.lyrics = (this.g.lyrics ? this.g.lyrics.trimEnd() + "\n" : "") + tag + "\n"; return; }
+      const start = area.selectionStart ?? area.value.length;
+      const end = area.selectionEnd ?? start;
+      const lineStart = area.value.lastIndexOf("\n", start - 1) + 1;
+      const lineEnd = area.value.indexOf("\n", start);
+      if (lineEnd === -1) lineEnd = area.value.length;
+      const isBlankLine = area.value.slice(lineStart, end).trim() === "";
+      const text = isBlankLine && start === lineStart ? tag + "\n" : "\n" + tag + "\n";
+      area.setRangeText(text, start, end, "end");
+      this.g.lyrics = area.value;
+      const caret = start + text.length;
+      area.focus();
+      area.setSelectionRange(caret, caret);
     },
 
     async submit(name, kind, params) {

@@ -129,6 +129,13 @@ def create_router(settings: Settings) -> APIRouter:
             raise HTTPException(status_code=404, detail=f"no such job: {job_id}")
         return job
 
+    @router.delete("/jobs")
+    def clear_jobs(request: Request):
+        try:
+            return queue(request).clear()
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
     @router.delete("/jobs/{job_id}")
     def cancel_job(request: Request, job_id: int):
         try:

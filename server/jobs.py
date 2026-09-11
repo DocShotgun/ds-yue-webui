@@ -406,6 +406,19 @@ class JobQueue:
             self.db.execute("UPDATE jobs SET deleted=1 WHERE id=?", (job_id,))
             self.db.commit()
 
+    def clear(self) -> dict:
+        """Soft-delete the entire jobs history (rows stay in the DB, like cancel)."""
+        with self.db_lock:
+            active = self.db.execute(
+                "SELECT id, status FROM jobs WHERE deleted=0 AND status IN ('pending','running')"
+                " ORDER BY id ASC LIMIT 1").fetchone()
+            if active is not None:
+                raise ValueError(f"cannot clear history while job #{active[0]} is {active[1]}; "
+                                 "cancel it first")
+            cursor = self.db.execute("UPDATE jobs SET deleted=1 WHERE deleted=0")
+            self.db.commit()
+            return {"cleared": cursor.rowcount}
+
     # -- submission ----------------------------------------------------------
     def submit(self, kind: str, params: dict, name: str | None = None) -> dict:
         if kind not in KINDS:

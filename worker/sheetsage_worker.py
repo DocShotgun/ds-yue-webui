@@ -86,12 +86,6 @@ def prompts_for_task(task: str) -> tuple[list[str], bool]:
     return prompts, True
 
 
-def abc_tools(env):
-    path = env.get("YUE_WEBUI_YUE2_DIR") or Path(__file__).resolve().parents[1] / DEFAULT_ABC_TOOLS
-    base = Path(path) if (Path(path) / "skills").is_dir() else Path(path).parent
-    return load_module(base / "skills" / "yue2-music" / "scripts" / "abc_tools.py")
-
-
 def _jsonable(report: dict):
     from fractions import Fraction
 

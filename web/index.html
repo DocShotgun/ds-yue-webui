@@ -84,7 +84,7 @@
             <button class="tag" @click="insertTag(tag)" x-text="tag"></button>
           </template>
         </div>
-        <textarea x-model="g.lyrics" rows="8" placeholder="[Verse]&#10;Neon fades along the lane&#10;[Chorus]&#10;Let the day come into view"></textarea>
+        <textarea id="lyrics-text" x-model="g.lyrics" rows="8" placeholder="[Verse]&#10;Neon fades along the lane&#10;[Chorus]&#10;Let the day come into view"></textarea>
       </label>
 
       <div class="fieldset">
@@ -160,11 +160,12 @@
       </div>
       <div class="row">
         <button class="primary" @click="submitGenerate()">Generate song</button>
+        <button class="ghost" @click="submitGenerate(true)">Plan only</button>
       </div>
     </div>
 
     <div class="card" x-show="jobs.length">
-      <div class="card-head"><h2>Recent jobs</h2><button class="ghost" @click="refreshJobs()">Refresh</button></div>
+      <div class="card-head"><h2>Recent jobs</h2><button class="ghost" @click="refreshJobs()">Refresh</button><button class="ghost" @click="clearJobs()">Clear history</button></div>
       <table>
         <thead><tr><th>#</th><th>Kind</th><th>Status</th><th>Created</th><th>Error</th></tr></thead>
         <tbody>
@@ -396,7 +397,7 @@
 
     <div class="card">
       <div class="card-head"><h2>Plans</h2></div>
-      <div class="note" x-show="!library.plans.length">No saved plans yet — plans are saved by plan-only jobs.</div>
+      <div class="note" x-show="!library.plans.length">No saved plans yet — use "Plan only" on the Generate tab.</div>
       <table x-show="library.plans.length">
         <thead><tr><th>Name</th><th>Status</th><th>Created</th><th></th></tr></thead>
         <tbody>
